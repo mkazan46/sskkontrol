@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { MergedDataTable } from '@/components/MergedDataTable';
 import type { MergedExcelData } from '@/lib/excel-utils';
-import { Loader2, PlusCircle } from 'lucide-react';
+import { Loader2, PlusCircle, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Card, CardContent } from '@/components/ui/card';
 
 export default function MergedDataPage() {
   const router = useRouter();
@@ -43,7 +44,7 @@ export default function MergedDataPage() {
   return (
     <main className="flex flex-col min-h-screen bg-background text-foreground">
       {/* Button Section with its own padding */}
-      <div className="w-full px-4 sm:px-8 py-6">
+      <div className="w-full px-4 sm:px-8 py-6 bg-background shadow-sm sticky top-0 z-20">
         <Button onClick={handleNewMerge} className="bg-primary hover:bg-primary/90 text-primary-foreground">
           <PlusCircle className="mr-2 h-5 w-5" />
           Yeni Birleştirme Yap
@@ -51,30 +52,34 @@ export default function MergedDataPage() {
       </div>
 
       {/* Content Section: Loader, Table, or No Data Message */}
-      {/* This container ensures content below button can take up available space or have its own controlled layout */}
-      <div className="w-full flex-grow flex flex-col">
+      <div className="w-full flex-grow flex flex-col p-4 sm:p-8">
         {isLoading && (
           <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-4">
-            <Loader2 className="h-12 w-12 animate-spin mb-3" />
-            <p>Veriler yükleniyor...</p>
+            <Loader2 className="h-16 w-16 animate-spin mb-4" />
+            <p className="text-xl">Veriler yükleniyor...</p>
           </div>
         )}
 
         {!isLoading && mergedData && mergedData.headers.length > 0 && (
-          // MergedDataTable includes a Card with w-full and mt-8.
-          // The mt-8 on the Card will create vertical space from the button section above.
-          // This page structure ensures no horizontal padding is applied to MergedDataTable, allowing it to be full-width.
           <MergedDataTable data={mergedData} />
         )}
         
         {!isLoading && (!mergedData || mergedData.headers.length === 0) && (
-          // This div has mt-8 to match the table's Card margin, and px for its text content.
-          <div className="w-full text-center px-4 sm:px-8 mt-8 py-10"> 
-            <p className="text-muted-foreground">Yüklenecek birleştirilmiş veri bulunmamaktadır.</p>
-            <p className="text-sm text-muted-foreground mt-2">Dosya yükleme sayfasına geri dönmek için yukarıdaki butonu kullanın.</p>
+          <div className="flex-grow flex flex-col items-center justify-center">
+            <Card className="w-full max-w-md shadow-lg">
+              <CardContent className="p-8 text-center">
+                <Info className="h-12 w-12 text-primary mx-auto mb-4" />
+                <p className="text-xl font-semibold text-foreground mb-2">Veri Bulunamadı</p>
+                <p className="text-muted-foreground">
+                  Görüntülenecek birleştirilmiş veri bulunmamaktadır. 
+                  Yeni bir birleştirme yapmak için yukarıdaki butonu kullanabilirsiniz.
+                </p>
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>
     </main>
   );
 }
+
