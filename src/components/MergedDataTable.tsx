@@ -12,182 +12,219 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Table2 } from 'lucide-react';
+import { Table2, Info } from 'lucide-react';
 import type { MergedExcelData } from '@/lib/excel-utils';
-import { format, isValid, parseISO } from 'date-fns';
-// Türkçe ay ve gün isimleri için gerekirse: import { tr } from 'date-fns/locale';
+import { format, isValid, parseISO, parse } from 'date-fns';
+import { tr } from 'date-fns/locale'; // For Turkish month/day names
 
 interface MergedDataTableProps {
   data: MergedExcelData | null;
 }
 
 // Extended list of headers that might contain date or time values in Turkish
-const DATE_HEADERS_TR = ["tarih", "işlem tarihi", "doğum tarihi", "kayıt tarihi", "başlangıç tarihi", "bitiş tarihi"];
-const TIME_HEADERS_TR = ["işlem saati", "saat", "başlangıç saati", "bitiş saati"];
+const DATE_HEADERS_TR = ["tarih", "işlem tarihi", "doğum tarihi", "kayıt tarihi", "başlangıç tarihi", "bitiş tarihi", "geçerlilik tarihi"];
+const TIME_HEADERS_TR = ["işlem saati", "saat", "başlangıç saati", "bitiş saati", "kayıt saati"];
+
+// Function to attempt parsing various Turkish date formats
+const parseTurkishDate = (dateString: string): Date | null => {
+  const formats = [
+    'dd.MM.yyyy HH:mm:ss',
+    'dd.MM.yyyy H:mm:ss',
+    'd.M.yyyy HH:mm:ss',
+    'd.M.yyyy H:mm:ss',
+    'dd/MM/yyyy HH:mm:ss',
+    'dd/MM/yyyy H:mm:ss',
+    'd/M/yyyy HH:mm:ss',
+    'd/M/yyyy H:mm:ss',
+    'dd.MM.yyyy HH:mm',
+    'dd.MM.yyyy H:mm',
+    'd.M.yyyy HH:mm',
+    'd.M.yyyy H:mm',
+    'dd/MM/yyyy HH:mm',
+    'dd/MM/yyyy H:mm',
+    'd/M/yyyy HH:mm',
+    'd/M/yyyy H:mm',
+    'dd.MM.yyyy',
+    'd.M.yyyy',
+    'dd/MM/yyyy',
+    'd/M/yyyy',
+    'yyyy-MM-dd HH:mm:ss', // ISO-like
+    'yyyy-MM-dd' // ISO-like date only
+  ];
+
+  for (const fmt of formats) {
+    try {
+      const parsed = parse(dateString, fmt, new Date());
+      if (isValid(parsed)) {
+        return parsed;
+      }
+    } catch (e) {
+      // continue trying other formats
+    }
+  }
+  // Try ISO parse as a last resort for strings
+  try {
+    const isoParsed = parseISO(dateString);
+    if (isValid(isoParsed)) return isoParsed;
+  } catch (e) { /* ignore */ }
+
+  return null;
+};
+
 
 export function MergedDataTable({ data }: MergedDataTableProps) {
   if (!data) {
-    return null;
+    return (
+        <Card className="w-full mt-6 shadow-xl">
+            <CardHeader>
+                <CardTitle className="flex items-center text-2xl">
+                    <Info className="mr-3 h-7 w-7 text-primary" />
+                    Veri Yok
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                <p className="text-muted-foreground text-center py-6">
+                Görüntülenecek birleştirilmiş veri bulunmamaktadır.
+                </p>
+            </CardContent>
+        </Card>
+    );
   }
-  // Even if data object exists, if there are no headers, it's not a meaningful table.
-  // Rows might be empty even if headers exist (e.g. after filtering or if source files were empty except headers).
-  // The logic below handles displayRowsWithSiraNo.length === 0 for the message.
-
+  
   const displayHeadersWithSiraNo = ["Sıra No", ...data.headers];
   const displayRowsWithSiraNo = data.rows.map((row, index) => [index + 1, ...row]);
 
   const formatCellContent = (cellValue: any, headerText: string): string => {
-    if (cellValue === null || cellValue === undefined) {
+    if (cellValue === null || cellValue === undefined || String(cellValue).trim() === "") {
       return "";
     }
 
     const normalizedHeaderText = headerText.toLocaleLowerCase('tr-TR').trim();
 
-    // Handle "Sıra No" separately first as it's always a number.
     if (normalizedHeaderText === "sıra no") {
       return String(cellValue);
     }
-
-    // Date object handling (most reliable if `cellDates: true` worked in excel-utils)
+    
+    // Handle pre-parsed Date objects (e.g., from cellDates: true)
     if (cellValue instanceof Date && isValid(cellValue)) {
       if (DATE_HEADERS_TR.includes(normalizedHeaderText)) {
-        return format(cellValue, 'dd.MM.yyyy'); // Consider { locale: tr } for Turkish month names
+        return format(cellValue, 'dd.MM.yyyy', { locale: tr });
       }
       if (TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-        return format(cellValue, 'HH:mm:ss');
+         // Check if it's a date object that only contains time (date part is epoch or similar)
+        if (cellValue.getFullYear() === 1970 || cellValue.getFullYear() === 1899) { // Common epoch start for time-only
+            return format(cellValue, 'HH:mm:ss');
+        }
+        return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr }); // Full date-time if not just time
       }
-      // Default format for Date objects not matching specific headers (e.g., a 'Modified At' column)
-      return format(cellValue, 'dd.MM.yyyy HH:mm:ss');
+      return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr }); // Default for other Date objects
     }
 
-    // String parsing for dates/times (fallback)
+    // Handle strings that might be dates or times
     if (typeof cellValue === 'string') {
+      const trimmedValue = cellValue.trim();
       if (DATE_HEADERS_TR.includes(normalizedHeaderText) || TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-        let parsedDate: Date | null = null;
-        try {
-          // Try ISO format first
-          const isoDate = parseISO(cellValue);
-          if (isValid(isoDate)) {
-            parsedDate = isoDate;
-          } else {
-            // Attempt to parse common Turkish date formats if necessary, or rely on generic new Date()
-            // Example: DD.MM.YYYY or DD/MM/YYYY - this requires more complex parsing logic.
-            // For now, new Date() is a general fallback.
-            const genericDate = new Date(cellValue);
-            if (isValid(genericDate) && genericDate.getFullYear() > 1800) { // Basic sanity check
-              parsedDate = genericDate;
-            }
-          }
-        } catch (e) { /* Parsing failed, will return as string */ }
-
+        const parsedDate = parseTurkishDate(trimmedValue);
         if (parsedDate && isValid(parsedDate)) {
-          if (DATE_HEADERS_TR.includes(normalizedHeaderText)) {
-            return format(parsedDate, 'dd.MM.yyyy');
+          if (DATE_HEADERS_TR.includes(normalizedHeaderText) && !TIME_HEADERS_TR.includes(normalizedHeaderText)) {
+            // If it's primarily a date column, format as date only.
+             return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
           }
-          if (TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-            // Check if the original string was likely just a time
-            if (cellValue.match(/^\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?$/i)) {
-                const timeParts = cellValue.match(/(\d+)/g);
-                if (timeParts && timeParts.length >= 2) {
-                    const tempDateForTime = new Date(0); // Use a fixed date to avoid DST issues
-                    tempDateForTime.setUTCHours(parseInt(timeParts[0],10), parseInt(timeParts[1],10), timeParts[2] ? parseInt(timeParts[2],10) : 0, 0);
-                    if(isValid(tempDateForTime)){
-                        return format(tempDateForTime, 'HH:mm:ss');
-                    }
-                }
-            }
+          if (TIME_HEADERS_TR.includes(normalizedHeaderText) && !DATE_HEADERS_TR.includes(normalizedHeaderText)) {
+            // If it's primarily a time column, format as time only.
             return format(parsedDate, 'HH:mm:ss');
           }
+          // If it could be both or is ambiguous, format as full date-time
+          return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
         }
       }
+      // Return original string if not a parsable date/time or not in a date/time column.
+      // This ensures Turkish characters in regular strings are preserved.
+      return trimmedValue;
     }
     
-    // Excel numeric serial date handling (another fallback, less common if `cellDates: true` is effective)
-    if (typeof cellValue === 'number' && 
-        (DATE_HEADERS_TR.includes(normalizedHeaderText) || TIME_HEADERS_TR.includes(normalizedHeaderText))) {
-        try {
-            // Excel stores dates as days since 1899-12-30 (or 1904-01-01 for Mac).
-            // XLSX.SSF.parse_date_code is the most robust way if direct access to XLSX library is feasible here.
-            // This is a simplified conversion and might have edge cases (e.g., Excel 1900 leap year bug).
-            const excelBaseDateEpoch = Date.UTC(1899, 11, 30); // Day 0 for Windows Excel
-            
-            const days = Math.floor(cellValue);
-            const timeFraction = cellValue - days;
-            
-            // Convert days to milliseconds and add to Excel base epoch
-            const dateMilliseconds = days * 24 * 60 * 60 * 1000;
-            // Convert time fraction to milliseconds
-            const timeMilliseconds = Math.round(timeFraction * 24 * 60 * 60 * 1000);
+    // Handle numbers (could be Excel date serials if cellDates:false, or just numbers)
+    if (typeof cellValue === 'number') {
+      if (DATE_HEADERS_TR.includes(normalizedHeaderText) || TIME_HEADERS_TR.includes(normalizedHeaderText)) {
+        // Attempt to convert Excel serial date number to Date object
+        // Excel for Windows serial date base: 30th December 1899
+        // Excel for Mac serial date base: 1st January 1904
+        // This simple conversion assumes Windows base and doesn't handle Mac 1904 base or leap year bug.
+        // For robust Excel date number conversion, XLSX.SSF.parse_date_code(cellValue) is better if available directly.
+        if (cellValue > 1 && cellValue < 2958466) { // Plausible range for Excel dates
+            try {
+                const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
+                const dateObj = new Date(excelEpoch.getTime() + (cellValue -1) * 24 * 60 * 60 * 1000);
+                 // Adjust for timezone offset if numbers represent UTC dates but should be shown in local time
+                dateObj.setTime(dateObj.getTime() + dateObj.getTimezoneOffset() * 60 * 1000);
 
-            const finalDate = new Date(excelBaseDateEpoch + dateMilliseconds + timeMilliseconds);
-            
-            // Adjust for timezone offset if numbers are UTC and display should be local
-            // finalDate.setTime(finalDate.getTime() + finalDate.getTimezoneOffset() * 60 * 1000);
-
-
-            if (isValid(finalDate)) {
-                 if (DATE_HEADERS_TR.includes(normalizedHeaderText)) {
-                    // If it's a date column and the number had no fractional part (was a whole day number)
-                    // or if it had a fractional part, still format as date.
-                    return format(finalDate, 'dd.MM.yyyy');
-                }
-                if (TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-                    // If it's a time column, and the number had a fractional part (time component)
-                    // or if it was purely a time value (number between 0 and 1)
-                    if (timeFraction > 0 || (cellValue > 0 && cellValue < 1)) {
-                         return format(finalDate, 'HH:mm:ss');
+                if (isValid(dateObj)) {
+                    if (DATE_HEADERS_TR.includes(normalizedHeaderText) && !TIME_HEADERS_TR.includes(normalizedHeaderText)) {
+                        return format(dateObj, 'dd.MM.yyyy', { locale: tr });
                     }
-                    // If it's a whole number in a time column, it might be a date being forced into time view.
-                    // Showing 00:00:00 or the date itself might be options.
-                    return format(finalDate, 'HH:mm:ss'); // Default to showing time part.
+                    if (TIME_HEADERS_TR.includes(normalizedHeaderText) && !DATE_HEADERS_TR.includes(normalizedHeaderText)) {
+                        // If it's a time column and the number is < 1, it's likely just time.
+                        // Otherwise, it might be a full date being shown in a time column.
+                        if (cellValue > 0 && cellValue < 1) return format(dateObj, 'HH:mm:ss');
+                         // For full dates in time columns, you might choose to show full or just time.
+                        return format(dateObj, 'HH:mm:ss'); // Default to time for time column
+                    }
+                    return format(dateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
                 }
-            }
-        } catch(e) { /* Conversion failed, will return as string */ }
+            } catch (e) { /* Fall through to string conversion */ }
+        }
+      }
+      // For non-date numbers, format with Turkish locale for number formatting (e.g., decimal points)
+      return cellValue.toLocaleString('tr-TR');
     }
 
+    // Fallback for other types (boolean, etc.)
     return String(cellValue);
   };
 
   return (
-    <Card className="w-full mt-6 shadow-xl">
-      <CardHeader>
-        <CardTitle className="flex items-center text-2xl">
-          <Table2 className="mr-3 h-7 w-7 text-primary" />
+    <Card className="w-full mt-6 shadow-xl rounded-lg">
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center text-2xl text-primary">
+          <Table2 className="mr-3 h-7 w-7" />
           Birleştirilmiş Veri Listesi
         </CardTitle>
         <CardDescription>
-          Yüklediğiniz dosyalardan birleştirilmiş ve TC Kimlik No'suna (eğer varsa) göre sıralanmış veriler.
+          Yüklediğiniz dosyalardan birleştirilmiş ve ilgili sütun bulunduğunda TC Kimlik No'suna göre sıralanmış veriler.
         </CardDescription>
       </CardHeader>
-      <CardContent className="pt-2">
+      <CardContent className="p-0"> {/* Adjusted padding for full width table feel */}
         {displayRowsWithSiraNo.length === 0 ? (
-          <p className="text-muted-foreground text-center py-6">
-            Görüntülenecek veri bulunmamaktadır. Lütfen dosya yükleyerek yeni bir birleştirme yapın.
-          </p>
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+            <Info className="h-12 w-12 mb-4 text-primary/70" />
+            <p className="text-lg">Görüntülenecek veri bulunmamaktadır.</p>
+            <p className="text-sm">Lütfen dosya yükleyerek yeni bir birleştirme yapın veya dosyalarınızı kontrol edin.</p>
+          </div>
         ) : (
-          <ScrollArea className="max-h-[calc(100vh-260px)] w-full overflow-auto border rounded-md">
-            <Table className="min-w-full">
+          <ScrollArea className="max-h-[calc(100vh-280px)] w-full overflow-auto"> {/* Max height adjusted slightly */}
+            <Table className="min-w-full whitespace-nowrap"> {/* whitespace-nowrap for horizontal scroll performance */}
               <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
-                <TableRow>
+                <TableRow className="border-b-0">
                   {displayHeadersWithSiraNo.map((header, index) => (
                     <TableHead 
                       key={index} 
-                      className="font-semibold text-card-foreground px-3 py-2.5 text-left whitespace-nowrap"
+                      className="font-semibold text-card-foreground px-3 py-3 text-left sticky top-0 bg-card z-10" // Enhanced sticky header
                     >
-                      {header}
+                      {String(header)}
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {displayRowsWithSiraNo.map((row, rowIndex) => (
-                  <TableRow key={rowIndex} className="hover:bg-muted/50 even:bg-background/50">
-                    {displayHeadersWithSiraNo.map((_header, cellIndex) => (
+                  <TableRow key={rowIndex} className="hover:bg-muted/30 even:bg-background/30 border-b last:border-b-0">
+                    {displayHeadersWithSiraNo.map((header, cellIndex) => ( // Use header from displayHeadersWithSiraNo for consistency
                       <TableCell 
                         key={cellIndex} 
-                        className="text-foreground px-3 py-1.5 text-left whitespace-nowrap text-sm"
+                        className="text-foreground px-3 py-2 text-left text-sm"
+                        title={formatCellContent(row[cellIndex], header)} // Add title for full content on hover
                       >
-                        {formatCellContent(row[cellIndex], displayHeadersWithSiraNo[cellIndex])}
+                        {formatCellContent(row[cellIndex], header)}
                       </TableCell>
                     ))}
                   </TableRow>
@@ -195,13 +232,15 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
               </TableBody>
             </Table>
             <ScrollBar orientation="horizontal" />
+             {/* Removed ScrollBar for vertical, ScrollArea handles it */}
           </ScrollArea>
         )}
-        <p className="text-xs text-muted-foreground mt-3 text-right pr-1">
-          Toplam {displayRowsWithSiraNo.length} satır gösteriliyor.
-        </p>
+        {displayRowsWithSiraNo.length > 0 && (
+            <div className="p-3 text-xs text-muted-foreground text-right border-t">
+                Toplam {displayRowsWithSiraNo.length} satır gösteriliyor.
+            </div>
+        )}
       </CardContent>
     </Card>
   );
 }
-

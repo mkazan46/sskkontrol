@@ -5,17 +5,17 @@ import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
-  subsets: ['latin'],
+  subsets: ['latin', 'latin-ext'], // Added latin-ext for broader character support
 });
 
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
-  subsets: ['latin'],
+  subsets: ['latin', 'latin-ext'], // Added latin-ext for broader character support
 });
 
 export const metadata: Metadata = {
-  title: 'Excel Merge Master',
-  description: 'SSK Kontrol Sayfası - Excel Dosyalarını Birleştirin',
+  title: 'Excel Birleştirme Uzmanı', // Changed title to Turkish
+  description: 'SSK Kontrol Sayfası - Excel Dosyalarını Birleştirin ve Analiz Edin', // Updated description in Turkish
 };
 
 export default function RootLayout({
@@ -24,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="tr"> {/* Changed lang to "tr" */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
         <Toaster />
