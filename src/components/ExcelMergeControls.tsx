@@ -68,11 +68,11 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading, o
       const data = await processAndMergeFiles(selectedFiles);
       if (data.headers.length === 0 && data.rows.length === 0 && selectedFiles.length > 0) {
         toast({
-          variant: "warning", // Changed to warning as it's not a critical error necessarily
+          variant: "warning", 
           title: "Veri Bulunamadı",
           description: "Dosyalar işlendi ancak birleştirilecek veri bulunamadı veya dosyalar boştu.",
         });
-         onMergeComplete({ headers: data.headers, rows: data.rows }); // Pass even if empty for table view logic
+         onMergeComplete({ headers: data.headers, rows: data.rows }); 
       } else {
         onMergeComplete(data);
         toast({
@@ -87,7 +87,7 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading, o
         title: "Birleştirme Hatası",
         description: `Dosyalar birleştirilirken bir hata oluştu: ${error instanceof Error ? error.message : String(error)}`,
       });
-      onMergeComplete({ headers: [], rows: [] }); // Reset data on error
+      onMergeComplete({ headers: [], rows: [] }); 
     }
   };
 
@@ -107,16 +107,14 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading, o
           <label htmlFor="file-upload" className="block text-sm font-medium text-card-foreground/80">
             Dosyaları Seçin
           </label>
-          <div className="flex items-center space-x-2">
-            <Input
-              id="file-upload"
-              type="file"
-              multiple
-              accept=".xlsx,.xls,.csv,.ods"
-              onChange={handleFileChange}
-              className="flex-grow file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-            />
-          </div>
+          <Input
+            id="file-upload"
+            type="file"
+            multiple
+            accept=".xlsx,.xls,.csv,.ods"
+            onChange={handleFileChange}
+            className="flex-grow file:mr-2 file:py-2 file:px-2 sm:file:px-3 file:text-xs sm:file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 file:whitespace-nowrap file:rounded-md file:border-0"
+          />
           {selectedFiles.length > 0 && (
             <div className="mt-2 text-sm text-muted-foreground">
               <p>{selectedFiles.length} dosya seçildi:</p>
@@ -152,4 +150,3 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading, o
     </Card>
   );
 }
-
