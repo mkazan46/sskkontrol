@@ -33,9 +33,18 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading }:
           description: "Lütfen sadece Excel (.xlsx, .xls), CSV (.csv) veya ODS (.ods) dosyaları yükleyin.",
         });
       }
-      setSelectedFiles(validFiles);
-    } else {
-      setSelectedFiles([]);
+      setSelectedFiles(prevFiles => {
+        // Yeni dosyaları mevcut listeye ekle, aynı dosyanın tekrar eklenmesini önle
+        const updatedFiles = [...prevFiles];
+        validFiles.forEach(newFile => {
+          if (!prevFiles.some(existingFile => existingFile.name === newFile.name && existingFile.size === newFile.size)) {
+            updatedFiles.push(newFile);
+          }
+        });
+        return updatedFiles;
+      });
+      // Clear the input value to allow selecting the same file again after removing it
+      event.target.value = '';
     }
   };
 
@@ -105,8 +114,8 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading }:
           {selectedFiles.length > 0 && (
             <div className="mt-2 text-sm text-muted-foreground">
               <p>{selectedFiles.length} dosya seçildi:</p>
-              <ul className="list-disc pl-5 max-h-32 overflow-y-auto">
-                {selectedFiles.map(file => <li key={file.name}>{file.name}</li>)}
+              <ul className="list-disc pl-5 max-h-24 overflow-y-auto rounded-md border p-2 bg-background"> {/* Reduced max-h and added some padding/styling */}
+                {selectedFiles.map(file => <li key={file.name} className="truncate">{file.name}</li>)}
               </ul>
             </div>
           )}
