@@ -122,8 +122,8 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading, o
               <p>{selectedFiles.length} dosya seçildi:</p>
               <ul className="list-none p-0 max-h-32 overflow-y-auto rounded-md border bg-background">
                 {selectedFiles.map(file => (
-                  <li key={file.name} className="truncate flex justify-between items-center p-2 border-b last:border-b-0">
-                    <span className="overflow-hidden text-ellipsis whitespace-nowrap mr-2">{file.name}</span>
+                  <li key={file.name} className="flex justify-between items-center p-2 border-b last:border-b-0">
+                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap mr-2">{file.name}</span>
                     <Button variant="ghost" size="sm" onClick={() => removeFile(file.name)} className="p-1 h-auto">
                       <XCircle className="h-4 w-4 text-destructive/70 hover:text-destructive" />
                     </Button>
