@@ -1,10 +1,11 @@
+
 "use client";
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { UploadCloud, GitMerge, Loader2, FileText } from 'lucide-react';
+import { UploadCloud, GitMerge, Loader2, FileText, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { MergedExcelData } from '@/lib/excel-utils';
 import { processAndMergeFiles } from '@/lib/excel-utils';
@@ -13,9 +14,10 @@ interface ExcelMergeControlsProps {
   onMergeStart: () => void;
   onMergeComplete: (data: MergedExcelData) => void;
   isLoading: boolean;
+  onFilesSelected: (count: number) => void;
 }
 
-export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading }: ExcelMergeControlsProps) {
+export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading, onFilesSelected }: ExcelMergeControlsProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const { toast } = useToast();
 
@@ -33,19 +35,23 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading }:
           description: "Lütfen sadece Excel (.xlsx, .xls), CSV (.csv) veya ODS (.ods) dosyaları yükleyin.",
         });
       }
-      setSelectedFiles(prevFiles => {
-        // Yeni dosyaları mevcut listeye ekle, aynı dosyanın tekrar eklenmesini önle
-        const updatedFiles = [...prevFiles];
-        validFiles.forEach(newFile => {
-          if (!prevFiles.some(existingFile => existingFile.name === newFile.name && existingFile.size === newFile.size)) {
-            updatedFiles.push(newFile);
-          }
-        });
-        return updatedFiles;
+      
+      const updatedFiles = [...selectedFiles];
+      validFiles.forEach(newFile => {
+        if (!updatedFiles.some(existingFile => existingFile.name === newFile.name && existingFile.size === newFile.size)) {
+          updatedFiles.push(newFile);
+        }
       });
-      // Clear the input value to allow selecting the same file again after removing it
-      event.target.value = '';
+      setSelectedFiles(updatedFiles);
+      onFilesSelected(updatedFiles.length);
+      event.target.value = ''; // Allow selecting the same file again after removing it
     }
+  };
+
+  const removeFile = (fileName: string) => {
+    const updatedFiles = selectedFiles.filter(file => file.name !== fileName);
+    setSelectedFiles(updatedFiles);
+    onFilesSelected(updatedFiles.length);
   };
 
   const handleMergeClick = async () => {
@@ -62,11 +68,11 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading }:
       const data = await processAndMergeFiles(selectedFiles);
       if (data.headers.length === 0 && data.rows.length === 0 && selectedFiles.length > 0) {
         toast({
-          variant: "destructive",
-          title: "Birleştirme Hatası",
-          description: "Dosyalar işlenemedi veya boş içerik. Lütfen dosyaları kontrol edin.",
+          variant: "warning", // Changed to warning as it's not a critical error necessarily
+          title: "Veri Bulunamadı",
+          description: "Dosyalar işlendi ancak birleştirilecek veri bulunamadı veya dosyalar boştu.",
         });
-         onMergeComplete({ headers: [], rows: [] });
+         onMergeComplete({ headers: data.headers, rows: data.rows }); // Pass even if empty for table view logic
       } else {
         onMergeComplete(data);
         toast({
@@ -114,8 +120,15 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading }:
           {selectedFiles.length > 0 && (
             <div className="mt-2 text-sm text-muted-foreground">
               <p>{selectedFiles.length} dosya seçildi:</p>
-              <ul className="list-disc pl-5 max-h-24 overflow-y-auto rounded-md border p-2 bg-background"> {/* Reduced max-h and added some padding/styling */}
-                {selectedFiles.map(file => <li key={file.name} className="truncate">{file.name}</li>)}
+              <ul className="list-none p-0 max-h-32 overflow-y-auto rounded-md border bg-background">
+                {selectedFiles.map(file => (
+                  <li key={file.name} className="truncate flex justify-between items-center p-2 border-b last:border-b-0">
+                    <span className="overflow-hidden text-ellipsis whitespace-nowrap mr-2">{file.name}</span>
+                    <Button variant="ghost" size="sm" onClick={() => removeFile(file.name)} className="p-1 h-auto">
+                      <XCircle className="h-4 w-4 text-destructive/70 hover:text-destructive" />
+                    </Button>
+                  </li>
+                ))}
               </ul>
             </div>
           )}
@@ -139,3 +152,4 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading }:
     </Card>
   );
 }
+
