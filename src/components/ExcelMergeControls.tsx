@@ -107,14 +107,16 @@ export function ExcelMergeControls({ onMergeStart, onMergeComplete, isLoading, o
           <label htmlFor="file-upload" className="block text-sm font-medium text-card-foreground/80">
             Dosyaları Seçin
           </label>
-          <Input
-            id="file-upload"
-            type="file"
-            multiple
-            accept=".xlsx,.xls,.csv,.ods"
-            onChange={handleFileChange}
-            className="flex-grow file:mr-2 file:py-2 file:px-2 sm:file:px-3 file:text-xs sm:file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 file:whitespace-nowrap file:rounded-md file:border-0"
-          />
+          <div className="flex flex-col sm:flex-row sm:items-center">
+            <Input
+              id="file-upload"
+              type="file"
+              multiple
+              accept=".xlsx,.xls,.csv,.ods"
+              onChange={handleFileChange}
+              className="flex-grow w-full file:mr-3 file:py-2 file:px-4 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 file:whitespace-nowrap file:rounded-md file:border-0"
+            />
+          </div>
           {selectedFiles.length > 0 && (
             <div className="mt-2 text-sm text-muted-foreground">
               <p>{selectedFiles.length} dosya seçildi:</p>
