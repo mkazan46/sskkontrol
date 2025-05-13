@@ -24,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="tr"> {/* Changed lang to "tr" */}
+    <html lang="tr">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
         <Toaster />
