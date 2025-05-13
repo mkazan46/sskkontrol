@@ -6,9 +6,9 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { MergedDataTable } from '@/components/MergedDataTable';
 import type { MergedExcelData } from '@/lib/excel-utils';
-import { Loader2, PlusCircle, Info } from 'lucide-react';
+import { Loader2, PlusCircle, Info, Home, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
 export default function MergedDataPage() {
   const router = useRouter();
@@ -21,65 +21,91 @@ export default function MergedDataPage() {
     if (rawData) {
       try {
         const parsedData: MergedExcelData = JSON.parse(rawData);
-        if (parsedData && parsedData.headers && parsedData.rows) {
-         setMergedData(parsedData);
+        // Basic validation for the structure
+        if (parsedData && Array.isArray(parsedData.headers) && Array.isArray(parsedData.rows)) {
+         setMergedData(parsedData); // Data is already sorted by TC Kimlik No from processAndMergeFiles
         } else {
-         toast({ variant: "destructive", title: "Hata", description: "Saklanan veriler bozuk veya eksik." });
-         localStorage.removeItem('mergedExcelData');
+         toast({ variant: "destructive", title: "Hata", description: "Saklanan birleştirilmiş veriler bozuk veya geçersiz formatta." });
+         localStorage.removeItem('mergedExcelData'); // Clean up corrupted data
         }
       } catch (error) {
         console.error("Error parsing merged data from localStorage:", error);
-        toast({ variant: "destructive", title: "Veri Yükleme Hatası", description: "Saklanan veriler okunurken bir sorun oluştu." });
-        localStorage.removeItem('mergedExcelData');
+        toast({ variant: "destructive", title: "Veri Yükleme Hatası", description: "Saklanan veriler okunurken bir sorun oluştu. Veri formatı bozuk olabilir." });
+        localStorage.removeItem('mergedExcelData'); // Clean up corrupted data
       }
     }
     setIsLoading(false);
   }, [toast]);
 
   const handleNewMerge = () => {
-    localStorage.removeItem('mergedExcelData');
+    // Optionally clear localStorage here if "Yeni Birleştirme" should always start fresh,
+    // but typically users might want to go back to the upload page without losing current view.
+    // localStorage.removeItem('mergedExcelData'); 
     router.push('/');
   };
 
   return (
-    <main className="flex flex-col min-h-screen bg-background text-foreground">
-      {/* Button Section with its own padding */}
-      <div className="w-full px-4 sm:px-8 py-6 bg-background shadow-sm sticky top-0 z-20">
-        <Button onClick={handleNewMerge} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-          <PlusCircle className="mr-2 h-5 w-5" />
-          Yeni Birleştirme Yap
-        </Button>
-      </div>
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-muted/30">
+      {/* Header Bar */}
+      <header className="sticky top-0 z-30 w-full bg-card shadow-md">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+          <h1 className="text-xl font-semibold text-primary flex items-center">
+            <ArrowLeft className="mr-2 h-5 w-5 cursor-pointer hover:text-primary/80" onClick={() => router.back()} title="Geri Dön"/>
+            Birleştirilmiş Veri Sonuçları
+          </h1>
+          <div className="flex items-center gap-3">
+            <Button onClick={handleNewMerge} variant="outline" className="text-primary border-primary hover:bg-primary/10">
+              <PlusCircle className="mr-2 h-5 w-5" />
+              Yeni Birleştirme
+            </Button>
+             <Button onClick={() => router.push('/')} variant="ghost" size="icon" title="Ana Sayfa">
+              <Home className="h-5 w-5 text-primary" />
+            </Button>
+          </div>
+        </div>
+      </header>
 
-      {/* Content Section: Loader, Table, or No Data Message */}
-      <div className="w-full flex-grow flex flex-col p-4 sm:p-8">
+      {/* Content Area */}
+      <main className="flex-grow w-full container mx-auto px-0 sm:px-4 lg:px-6 py-6"> {/* Adjusted padding for full width table feel */}
         {isLoading && (
-          <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-4">
+          <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-8 mt-10">
             <Loader2 className="h-16 w-16 animate-spin mb-4" />
-            <p className="text-xl">Veriler yükleniyor...</p>
+            <p className="text-xl font-semibold">Birleştirilmiş veriler yükleniyor...</p>
+            <p className="text-muted-foreground mt-1">Lütfen bekleyin.</p>
           </div>
         )}
 
-        {!isLoading && mergedData && mergedData.headers.length > 0 && (
+        {!isLoading && mergedData && (mergedData.headers.length > 0 || mergedData.rows.length > 0) && (
+          // MergedDataTable component will now handle its own Card styling
           <MergedDataTable data={mergedData} />
         )}
         
-        {!isLoading && (!mergedData || mergedData.headers.length === 0) && (
-          <div className="flex-grow flex flex-col items-center justify-center">
-            <Card className="w-full max-w-md shadow-lg">
-              <CardContent className="p-8 text-center">
-                <Info className="h-12 w-12 text-primary mx-auto mb-4" />
-                <p className="text-xl font-semibold text-foreground mb-2">Veri Bulunamadı</p>
-                <p className="text-muted-foreground">
+        {!isLoading && (!mergedData || (mergedData.headers.length === 0 && mergedData.rows.length === 0)) && (
+          <div className="flex-grow flex flex-col items-center justify-center mt-10">
+            <Card className="w-full max-w-lg shadow-xl rounded-lg">
+              <CardHeader className="text-center">
+                  <Info className="h-16 w-16 text-primary mx-auto mb-5" />
+                <CardTitle className="text-2xl font-bold text-foreground">
+                    Veri Bulunamadı
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center pb-8">
+                <p className="text-muted-foreground text-md mb-6">
                   Görüntülenecek birleştirilmiş veri bulunmamaktadır. 
-                  Yeni bir birleştirme yapmak için yukarıdaki butonu kullanabilirsiniz.
+                  Bu durum, daha önce bir birleştirme yapılmadığını veya saklanan verinin silinmiş/bozulmuş olabileceğini gösterir.
                 </p>
+                <Button onClick={handleNewMerge} className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <PlusCircle className="mr-2 h-5 w-5" />
+                  Yeni Birleştirme Sayfasına Git
+                </Button>
               </CardContent>
             </Card>
           </div>
         )}
-      </div>
-    </main>
+      </main>
+       <footer className="py-4 text-center text-xs text-muted-foreground border-t border-border">
+         © {new Date().getFullYear()} Excel Birleştirme Aracı.
+      </footer>
+    </div>
   );
 }
-
