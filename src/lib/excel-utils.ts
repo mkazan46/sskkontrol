@@ -28,69 +28,130 @@ export async function processAndMergeFiles(files: File[]): Promise<MergedExcelDa
   let allRows: any[][] = [];
   let firstFileHeadersOriginalCase: string[] = []; 
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    let fileBuffer = await file.arrayBuffer();
+  for (const file of files) {
+    const fileBuffer = await file.arrayBuffer();
     const fileName = file.name.toLowerCase();
-    let currentWorkbook: XLSX.WorkBook | undefined;
+    let workbookToProcess: XLSX.WorkBook | undefined;
 
-    try {
-      console.log(`Processing file: ${file.name}`);
-      let initialWorkbook: XLSX.WorkBook;
+    console.log(`Processing file: ${file.name}`);
 
-      if (fileName.endsWith('.xls')) {
-        console.log(`Reading XLS file ${file.name} with codepage 1254.`);
-        initialWorkbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true, codepage: 1254 });
-        const xlsxBuffer = XLSX.write(initialWorkbook, { bookType: 'xlsx', type: 'array' });
-        console.log(`${file.name} (XLS) converted to XLSX format in memory. Reading this XLSX data.`);
-        currentWorkbook = XLSX.read(xlsxBuffer, { type: 'array', cellDates: true });
-        console.log(`${file.name} (XLS) processed successfully via XLSX conversion.`);
-      } else if (fileName.endsWith('.csv')) {
-        console.log(`Reading CSV file ${file.name} with codepage 1254.`);
-        initialWorkbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true, codepage: 1254 });
-        const xlsxBuffer = XLSX.write(initialWorkbook, { bookType: 'xlsx', type: 'array' });
-        console.log(`${file.name} (CSV) converted to XLSX format in memory. Reading this XLSX data.`);
-        currentWorkbook = XLSX.read(xlsxBuffer, { type: 'array', cellDates: true });
-        console.log(`${file.name} (CSV) processed successfully via XLSX conversion.`);
-      } else if (fileName.endsWith('.xlsx')) {
-        console.log(`Reading XLSX file ${file.name} directly as it is already in XLSX format.`);
-        currentWorkbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true }); // It's already XLSX
-        console.log(`${file.name} (XLSX) processed directly.`);
-      } else { // .ods or other formats that XLSX.read can handle
-        console.log(`Reading file ${file.name} (e.g., ODS/other) and converting to XLSX in memory.`);
-        initialWorkbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
-        const xlsxBuffer = XLSX.write(initialWorkbook, { bookType: 'xlsx', type: 'array' });
-        console.log(`${file.name} (ODS/other) converted to XLSX format in memory. Reading this XLSX data.`);
-        currentWorkbook = XLSX.read(xlsxBuffer, { type: 'array', cellDates: true });
-        console.log(`${file.name} (ODS/other) processed successfully via XLSX conversion.`);
-      }
-    } catch (primaryError) {
-      const errorMessage = primaryError instanceof Error ? primaryError.message : String(primaryError);
-      console.warn(`Primary processing strategy for ${file.name} failed: ${errorMessage}`);
+    if (fileName.endsWith('.xlsx')) {
       try {
-        console.warn(`Fallback: Attempting to read ${file.name} with SheetJS auto-detection (no specific codepage).`);
-        // Fallback reads the file as is; does not attempt further conversion to XLSX here to keep fallback simple.
-        currentWorkbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
-        console.log(`${file.name} processed with fallback auto-detection.`);
-      } catch (fallbackError) {
-        const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        console.error(`Fallback reading of ${file.name} also failed: ${fallbackErrorMessage}`);
-        throw new Error(`Dosya ${file.name} işlenemedi. Birincil deneme: ${errorMessage}. Yedek deneme: ${fallbackErrorMessage}`);
+        console.log(`Reading XLSX file: ${file.name}`);
+        workbookToProcess = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        console.error(`Error reading XLSX file ${file.name}: ${errorMessage}`);
+        throw new Error(`XLSX dosyası ${file.name} okunamadı: ${errorMessage}`);
       }
+    } else if (fileName.endsWith('.xls')) { // BIFF formats (Excel 97-2003)
+      try {
+        console.log(`Attempting to read XLS file ${file.name} with codepage 1254 (Turkish).`);
+        workbookToProcess = XLSX.read(fileBuffer, { type: 'array', cellDates: true, codepage: 1254 });
+      } catch (e1) {
+        const errorMsg1 = e1 instanceof Error ? e1.message : String(e1);
+        console.warn(`Failed to read XLS ${file.name} with codepage 1254: ${errorMsg1}. Falling back to auto-detection (no specific codepage).`);
+        try {
+          workbookToProcess = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
+        } catch (e2) {
+          const errorMsg2 = e2 instanceof Error ? e2.message : String(e2);
+          console.error(`Error reading XLS file ${file.name} (both attempts failed). CP1254 error: ${errorMsg1}, Fallback error: ${errorMsg2}`);
+          throw new Error(`XLS dosyası ${file.name} okunamadı. CP1254 denemesi: ${errorMsg1}. Otomatik deneme: ${errorMsg2}`);
+        }
+      }
+    } else if (fileName.endsWith('.csv')) {
+      let csvTextContent: string;
+      try {
+        // Prefer UTF-8 for CSV as it's a modern standard
+        console.log(`Attempting to read CSV ${file.name} as UTF-8 text (using browser default).`);
+        csvTextContent = await file.text();
+        console.log(`CSV ${file.name} read as text, assuming UTF-8 or browser-detected encoding.`);
+      } catch (e_utf8_read) {
+        const utf8ReadError = e_utf8_read instanceof Error ? e_utf8_read.message : String(e_utf8_read);
+        console.warn(`Failed to read CSV ${file.name} as UTF-8 text: ${utf8ReadError}. Falling back to windows-1254 text reading.`);
+        try {
+          const reader = new FileReader();
+          csvTextContent = await new Promise<string>((resolve, reject) => {
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = (err) => reject(new Error(`FileReader error with windows-1254: ${err.type}`)); 
+            reader.readAsText(file, 'windows-1254'); // Turkish ANSI
+          });
+          console.log(`CSV ${file.name} read as text with windows-1254 encoding.`);
+        } catch (e_cp1254_read) {
+          const cp1254ReadError = e_cp1254_read instanceof Error ? e_cp1254_read.message : String(e_cp1254_read);
+          console.error(`Failed to read CSV ${file.name} text with both UTF-8 and windows-1254 methods. UTF-8 Error: ${utf8ReadError}, CP1254 Error: ${cp1254ReadError}`);
+          throw new Error(`CSV dosyası ${file.name} metin olarak okunamadı. Hata (UTF-8): ${utf8ReadError}. Hata (Win-1254): ${cp1254ReadError}`);
+        }
+      }
+      
+      try {
+        // Parse the obtained text content
+        workbookToProcess = XLSX.read(csvTextContent, { type: 'string', cellDates: true, raw: false });
+        console.log(`CSV ${file.name} parsed from text successfully.`);
+      } catch (e_parse) {
+        const parseError = e_parse instanceof Error ? e_parse.message : String(e_parse);
+        // Log first 200 chars to help debug if text was garbled
+        console.error(`Failed to parse CSV text for ${file.name}. Error: ${parseError}. Text started with: "${csvTextContent.substring(0,200)}"`);
+        throw new Error(`CSV dosyası ${file.name} içeriği ayrıştırılamadı: ${parseError}`);
+      }
+
+    } else if (fileName.endsWith('.ods')) {
+      try {
+        console.log(`Reading ODS file: ${file.name}`);
+        workbookToProcess = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        console.error(`Error reading ODS file ${file.name}: ${errorMessage}`);
+        throw new Error(`ODS dosyası ${file.name} okunamadı: ${errorMessage}`);
+      }
+    } else {
+      // Fallback for other extensions, try generic read
+      const fileExtension = fileName.split('.').pop() || "unknown";
+      console.warn(`Unsupported file extension ".${fileExtension}" for ${file.name}. Attempting generic read.`);
+      try {
+        workbookToProcess = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        console.error(`Error reading file ${file.name} with unsupported extension ".${fileExtension}": ${errorMessage}`);
+        throw new Error(`Dosya ${file.name} (tip: .${fileExtension}) okunamadı: ${errorMessage}`);
+      }
+    }
+
+    // Convert to in-memory XLSX representation if not already
+    // This ensures consistent handling for header/row extraction
+    let currentWorkbook: XLSX.WorkBook;
+    if (workbookToProcess) {
+      if (fileName.endsWith('.xlsx')) {
+        currentWorkbook = workbookToProcess; // Already in desired format
+        console.log(`${file.name} is XLSX, using directly.`);
+      } else {
+        // Convert XLS, CSV (parsed into workbook), ODS to an in-memory XLSX structure
+        console.log(`Converting ${file.name} to in-memory XLSX representation.`);
+        try {
+          const xlsxBuffer = XLSX.write(workbookToProcess, { bookType: 'xlsx', type: 'array' });
+          // Re-read from this buffer to ensure it's a "clean" XLSX workbook object
+          currentWorkbook = XLSX.read(xlsxBuffer, { type: 'array', cellDates: true });
+          console.log(`${file.name} successfully converted and re-read as XLSX.`);
+        } catch (conversionError) {
+          const convErrorMsg = conversionError instanceof Error ? conversionError.message : String(conversionError);
+          console.error(`Error converting ${file.name} to XLSX format for internal processing: ${convErrorMsg}`);
+          throw new Error(`${file.name} dosyası iç işleme için XLSX formatına dönüştürülürken hata oluştu: ${convErrorMsg}`);
+        }
+      }
+    } else {
+      console.warn(`Workbook could not be created or processed for ${file.name}. Skipping this file.`);
+      continue; // Move to the next file
     }
     
-    if (!currentWorkbook) {
-        console.warn(`Workbook could not be created for ${file.name}. Skipping.`);
-        continue;
-    }
-
+    // Extract data from the (now XLSX-formatted) workbook
     const firstSheetName = currentWorkbook.SheetNames[0];
     if (!firstSheetName) {
-      console.warn(`File ${file.name} contains no sheets to read. Skipping.`);
+      console.warn(`File ${file.name} (after processing) contains no sheets. Skipping.`);
       continue;
     }
 
     const worksheet = currentWorkbook.Sheets[firstSheetName];
+    // Using raw:false to get parsed values, defval to handle empty cells.
     const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "", raw: false });
 
     if (sheetData.length > 0 && sheetData[0].length > 0) {
@@ -121,9 +182,9 @@ export async function processAndMergeFiles(files: File[]): Promise<MergedExcelDa
         }
       }
     } else {
-      console.warn(`File ${file.name} is empty or contains no valid header row after processing. Data part skipped.`);
+      console.warn(`File ${file.name} (after processing) is empty or has no header row. Data part skipped.`);
     }
-  }
+  } // End of loop through files
 
   if (firstFileHeadersOriginalCase.length > 0 && allRows.length > 0) {
     const firstFileHeadersNormalizedForSort = firstFileHeadersOriginalCase.map(h => h.toLocaleUpperCase('tr-TR'));
