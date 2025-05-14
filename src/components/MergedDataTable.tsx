@@ -18,16 +18,19 @@ import { format, isValid } from 'date-fns';
 import { tr } from 'date-fns/locale'; 
 import { parseTurkishDate, DATE_HEADERS_TR_FORMATTING, TIME_HEADERS_TR_FORMATTING } from '@/lib/date-utils';
 import { Button } from '@/components/ui/button';
-
+import { cn } from '@/lib/utils';
 
 interface MergedDataTableProps {
   data: MergedExcelData | null;
-  onAnalyzeDeletions?: () => void; // Optional for now, will be used from MergedDataPage
-  isAnalyzing?: boolean; // Optional for now
+  onAnalyzeDeletions?: () => void;
+  isAnalyzing?: boolean;
+  analysisApplied?: boolean; 
 }
 
+const ANALYSIS_MARKER_HEADER = "__isAnalyzedDeletion";
+const ANALYSIS_MARKER_VALUE = "ANALYZED_DELETION_ROW_MARKER";
 
-export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: MergedDataTableProps) {
+export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, analysisApplied }: MergedDataTableProps) {
   if (!data) {
     return (
         <Card className="w-full mt-6 shadow-xl">
@@ -46,15 +49,22 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
     );
   }
   
-  // If "Sıra No" is already a header, don't add it again.
-  // This can happen if analysis adds it, then user re-analyzes.
-  // For now, analysis adds its own columns, not "Sıra No".
-  // So, this logic should be fine.
   const hasSiraNo = data.headers[0]?.toLocaleLowerCase('tr-TR') === "sıra no";
-  const displayHeaders = hasSiraNo ? [...data.headers] : ["Sıra No", ...data.headers];
-  const displayRows = hasSiraNo 
-    ? data.rows 
-    : data.rows.map((row, index) => [index + 1, ...row]);
+  
+  const analysisMarkerIndex = data.headers.indexOf(ANALYSIS_MARKER_HEADER);
+
+  // Filter out the analysis marker header for display
+  const displayHeaders = (hasSiraNo ? [...data.headers] : ["Sıra No", ...data.headers])
+                         .filter(header => header !== ANALYSIS_MARKER_HEADER);
+
+  const displayRows = data.rows.map((row, index) => {
+    const baseRow = hasSiraNo ? [...row] : [index + 1, ...row];
+    // If analysis marker column exists, ensure it's consistent for rows that might not have it
+    if (analysisMarkerIndex !== -1 && baseRow.length <= (hasSiraNo ? analysisMarkerIndex : analysisMarkerIndex +1) ) {
+        // This case should ideally not happen if analysis-utils correctly adds the column to all rows
+    }
+    return baseRow;
+  });
 
 
   const formatCellContent = (cellValue: any, headerText: string): string => {
@@ -69,23 +79,20 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
     }
     
     const isDateColumn = DATE_HEADERS_TR_FORMATTING.includes(normalizedHeaderText);
-    // Check against TIME_HEADERS_TR_FORMATTING from date-utils, which now includes analysis time headers
     const isTimeColumn = TIME_HEADERS_TR_FORMATTING.includes(normalizedHeaderText);
     
     const parsedDate = parseTurkishDate(cellValue); 
 
     if (parsedDate && isValid(parsedDate)) {
-      if (isTimeColumn && !isDateColumn) { // Specifically a time column
+      if (isTimeColumn && !isDateColumn) {
         return format(parsedDate, 'HH:mm:ss');
       }
-      if (isDateColumn && !isTimeColumn) { // Specifically a date column
+      if (isDateColumn && !isTimeColumn) {
         return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
       }
-      // Default for datetime or ambiguous columns, or if a date object is in a column not strictly date/time
       if (parsedDate.getHours() === 0 && parsedDate.getMinutes() === 0 && parsedDate.getSeconds() === 0 && parsedDate.getMilliseconds() === 0) {
-        // It's a date at midnight. If column expects date, show date. If expects time, show 00:00:00
         if (isDateColumn) return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
-        if (isTimeColumn) return format(parsedDate, 'HH:mm:ss'); // Will show 00:00:00
+        if (isTimeColumn) return format(parsedDate, 'HH:mm:ss');
       }
       return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
     }
@@ -100,41 +107,41 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
   };
 
   return (
-    <Card className="w-full mt-6 shadow-xl rounded-lg overflow-hidden">
-      <CardHeader className="border-b flex flex-row items-center justify-between">
+    <Card className="w-full mt-6 shadow-xl rounded-lg overflow-hidden flex flex-col flex-grow">
+      <CardHeader className="border-b flex flex-row items-center justify-between p-4">
         <div>
-          <CardTitle className="flex items-center text-2xl text-primary">
-            <Table2 className="mr-3 h-7 w-7" />
+          <CardTitle className="flex items-center text-xl sm:text-2xl text-primary">
+            <Table2 className="mr-2 sm:mr-3 h-6 w-6 sm:h-7 sm:w-7" />
             Birleştirilmiş Veri Listesi
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-xs sm:text-sm">
             Yüklediğiniz dosyalardan birleştirilmiş ve ilgili sütun bulunduğunda TC Kimlik No'suna göre sıralanmış veriler.
-            {data.headers.includes("Analiz: Silme Saati") && " (Silme analizi uygulandı.)"}
+            {analysisApplied && " (Silme analizi uygulandı ve ilgili satırlar işaretlendi.)"}
           </CardDescription>
         </div>
         {onAnalyzeDeletions && (
             <Button 
               onClick={onAnalyzeDeletions} 
               variant="outline" 
-              className="text-primary border-primary hover:bg-primary/10 whitespace-nowrap"
+              className="text-primary border-primary hover:bg-primary/10 whitespace-nowrap px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm"
               disabled={isAnalyzing || !data || data.rows.length === 0}
               size="sm"
             >
-              {isAnalyzing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FileSearch2 className="mr-2 h-5 w-5" />}
+              {isAnalyzing ? <Loader2 className="mr-1 sm:mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <FileSearch2 className="mr-1 sm:mr-2 h-4 w-4 sm:h-5 sm:w-5" />}
               Silme Kayıtlarını Çıkart & Analiz Et
             </Button>
         )}
       </CardHeader>
-      <CardContent className="p-0"> 
+      <CardContent className="p-0 flex flex-col flex-grow"> 
         {displayRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground flex-grow">
             <Info className="h-12 w-12 mb-4 text-primary/70" />
             <p className="text-lg">Görüntülenecek veri bulunmamaktadır.</p>
             <p className="text-sm">Lütfen dosya yükleyerek yeni bir birleştirme yapın veya dosyalarınızı kontrol edin.</p>
           </div>
         ) : (
-          <ScrollArea className="max-h-[calc(100vh-320px)] w-full"> {/* Adjusted max-height */}
-            <Table className="min-w-full table-auto"> {/* Removed whitespace-nowrap */}
+          <ScrollArea className="flex-grow w-full"> 
+            <Table className="min-w-full table-auto">
               <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
                 <TableRow className="border-b-0">
                   {displayHeaders.map((header, index) => (
@@ -148,17 +155,32 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayRows.map((row, rowIndex) => (
-                  <TableRow key={rowIndex} className="hover:bg-muted/30 even:bg-background/30 border-b last:border-b-0">
+                {displayRows.map((rowArray, rowIndex) => {
+                  // Determine if the row is an analyzed deletion row
+                  // The marker is in the original data.rows structure, need to access it via original index if 'Sıra No' was added
+                  const originalDataRowIndex = rowIndex; // Assuming displayRows corresponds 1:1 with data.rows for now
+                  const originalRow = data.rows[originalDataRowIndex];
+                  const isAnalyzed = analysisMarkerIndex !== -1 && 
+                                     originalRow && 
+                                     originalRow[analysisMarkerIndex] === ANALYSIS_MARKER_VALUE;
+
+                  return (
+                  <TableRow 
+                    key={rowIndex} 
+                    className={cn(
+                        "hover:bg-muted/30 even:bg-background/30 border-b last:border-b-0",
+                        isAnalyzed && "bg-red-100 dark:bg-red-800/30 hover:bg-red-200/70 dark:hover:bg-red-700/40"
+                    )}
+                    >
                     {displayHeaders.map((originalHeader, cellIndex) => {
-                      // If originalHeader is "Sıra No" and displayHeaders also starts with "Sıra No" (meaning it was added by this component)
-                      // then the actual data for this cell is in row[cellIndex] (if hasSiraNo is true) or row[cellIndex-1] (if hasSiraNo is false).
-                      // The current `row` is already `displayRows` which has Sıra No at index 0 if added.
-                      const cellData = row[cellIndex];
+                      const cellData = rowArray[cellIndex];
                       return (
                         <TableCell 
                           key={cellIndex} 
-                          className="text-foreground px-3 py-2 text-left text-sm break-words" // Added break-words
+                          className={cn(
+                            "text-foreground px-3 py-2 text-left text-sm break-words",
+                            isAnalyzed && "text-red-900 dark:text-red-100"
+                          )}
                           title={formatCellContent(cellData, String(originalHeader))} 
                         >
                           {formatCellContent(cellData, String(originalHeader))}
@@ -166,7 +188,8 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
                       );
                     })}
                   </TableRow>
-                ))}
+                );
+                })}
               </TableBody>
             </Table>
             <ScrollBar orientation="horizontal" />
@@ -174,7 +197,7 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
         )}
         {displayRows.length > 0 && (
             <div className="p-3 text-xs text-muted-foreground text-right border-t">
-                Toplam {data.rows.length} satır gösteriliyor. {/* Use original data.rows.length for count */}
+                Toplam {data.rows.length} satır gösteriliyor.
             </div>
         )}
       </CardContent>

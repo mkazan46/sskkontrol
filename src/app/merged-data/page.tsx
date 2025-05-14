@@ -6,9 +6,9 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { MergedDataTable } from '@/components/MergedDataTable';
 import type { MergedExcelData } from '@/lib/excel-utils';
-import { Loader2, PlusCircle, Info, Home, ArrowLeft } from 'lucide-react'; // Removed FileSearch2 as it's now in MergedDataTable
+import { Loader2, PlusCircle, Info, Home, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // Removed CardDescription
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { extractDeletionRelatedRecords } from '@/lib/analysis-utils'; 
 
 export default function MergedDataPage() {
@@ -17,6 +17,8 @@ export default function MergedDataPage() {
   const [mergedData, setMergedData] = useState<MergedExcelData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisApplied, setAnalysisApplied] = useState(false);
+
 
   useEffect(() => {
     const rawData = localStorage.getItem('mergedExcelData');
@@ -48,24 +50,26 @@ export default function MergedDataPage() {
       return;
     }
     setIsAnalyzing(true);
+    setAnalysisApplied(false); // Reset before new analysis
     try {
       const analysisResult = extractDeletionRelatedRecords(mergedData);
       
-      if (analysisResult.headers.includes("Analiz Hatası")) {
-         toast({ variant: "destructive", title: "Analiz Hatası", description: analysisResult.rows.length > 0 ? analysisResult.rows[0][analysisResult.headers.indexOf("Analiz Hatası")] : "Gerekli sütunlar bulunamadı." });
-         // setMergedData(analysisResult); // Show error in table or revert? For now, don't update if error
+      // Check if the result contains an error header added by the analysis function
+      const errorHeaderIndex = analysisResult.headers.indexOf("Analiz Hatası");
+      if (errorHeaderIndex !== -1) {
+         toast({ variant: "destructive", title: "Analiz Hatası", description: analysisResult.rows.length > 0 ? analysisResult.rows[0][errorHeaderIndex] : "Gerekli sütunlar bulunamadı veya analiz sırasında bir sorun oluştu." });
       } else {
-        const silmeAnalysisApplied = analysisResult.rows.some(row => 
-            row[analysisResult.headers.indexOf("Analiz: Silme Saati")] !== "" ||
-            row[analysisResult.headers.indexOf("Analiz: Silme Detayı")] !== ""
-        );
+        // Check if any row was actually marked by the analysis
+        const markerHeaderIndex = analysisResult.headers.indexOf("__isAnalyzedDeletion");
+        const silmeAnalysisPerformed = markerHeaderIndex !== -1 && analysisResult.rows.some(row => row[markerHeaderIndex] === "ANALYZED_DELETION_ROW_MARKER");
 
-        if (silmeAnalysisApplied) {
-            toast({ variant: "default", title: "Analiz Tamamlandı", description: "Silme kayıt analizi tabloya eklendi." });
+        if (silmeAnalysisPerformed) {
+            toast({ variant: "default", title: "Analiz Tamamlandı", description: "Silme kayıtları analiz edildi ve tabloda işaretlendi." });
+            setAnalysisApplied(true);
         } else {
-            toast({ variant: "default", title: "Analiz Tamamlandı", description: "İlişkilendirilecek aktif silme kaydı bulunamadı veya ilgili giriş/çıkış bilgileri eksik." });
+            toast({ variant: "default", title: "Analiz Tamamlandı", description: "İlişkilendirilecek veya işlenecek aktif silme kaydı bulunamadı." });
         }
-        setMergedData(analysisResult); // Update table with augmented data
+        setMergedData(analysisResult); // Update table with potentially modified data and markers
       }
     } catch (error) {
       console.error("Error during deletion analysis:", error);
@@ -84,7 +88,6 @@ export default function MergedDataPage() {
             Birleştirilmiş Veri Sonuçları
           </h1>
           <div className="flex items-center gap-3">
-            {/* Analyze button is now inside MergedDataTable */}
             <Button onClick={handleNewMerge} variant="outline" className="text-primary border-primary hover:bg-primary/10">
               <PlusCircle className="mr-2 h-5 w-5" />
               Yeni Birleştirme
@@ -96,7 +99,7 @@ export default function MergedDataPage() {
         </div>
       </header>
 
-      <main className="flex-grow w-full py-6 px-0 sm:px-0 lg:px-0"> {/* Removed horizontal padding */}
+      <main className="flex-grow w-full py-6 px-0 sm:px-0 lg:px-0 flex flex-col"> {/* Added flex flex-col */}
         {isLoading && (
           <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-8 mt-10">
             <Loader2 className="h-16 w-16 animate-spin mb-4" />
@@ -110,6 +113,7 @@ export default function MergedDataPage() {
             data={mergedData} 
             onAnalyzeDeletions={handleAnalyzeDeletions}
             isAnalyzing={isAnalyzing}
+            analysisApplied={analysisApplied}
           />
         )}
         
