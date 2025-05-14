@@ -66,7 +66,7 @@ export default function MergedDataPage() {
       </header>
 
       {/* Content Area */}
-      <main className="flex-grow w-full container mx-auto px-0 sm:px-4 lg:px-6 py-6"> {/* Adjusted padding for full width table feel */}
+      <main className="flex-grow w-full py-6"> {/* Removed container, mx-auto and px classes for full width */}
         {isLoading && (
           <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-8 mt-10">
             <Loader2 className="h-16 w-16 animate-spin mb-4" />
@@ -76,12 +76,12 @@ export default function MergedDataPage() {
         )}
 
         {!isLoading && mergedData && (mergedData.headers.length > 0 || mergedData.rows.length > 0) && (
-          // MergedDataTable component will now handle its own Card styling
+          // MergedDataTable component will now handle its own Card styling and occupy full width
           <MergedDataTable data={mergedData} />
         )}
         
         {!isLoading && (!mergedData || (mergedData.headers.length === 0 && mergedData.rows.length === 0)) && (
-          <div className="flex-grow flex flex-col items-center justify-center mt-10">
+          <div className="flex-grow flex flex-col items-center justify-center mt-10 px-4"> {/* Added px-4 for padding on small screens for this card */}
             <Card className="w-full max-w-lg shadow-xl rounded-lg">
               <CardHeader className="text-center">
                   <Info className="h-16 w-16 text-primary mx-auto mb-5" />
