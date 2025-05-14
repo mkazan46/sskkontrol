@@ -111,30 +111,44 @@ const parseTurkishDate = (dateString: string): Date | null => {
       const parsed = parse(dateString, fmt, new Date());
       if (isValid(parsed)) {
         let year = parsed.getFullYear();
-        // Check if the format string 'fmt' likely used a two-digit year pattern (e.g., 'yy')
-        // and if the parsed year is like 0-99 (e.g., 25 instead of 2025).
-        const usesShortYear = (fmt.toLowerCase().includes('yy') && !fmt.toLowerCase().includes('yyyy'));
-
-        if (usesShortYear && year >= 0 && year < 100) {
-          // Apply a common 2-digit year heuristic:
-          // Years 0-68 are considered 2000s (e.g., 25 -> 2025)
-          // Years 69-99 are considered 1900s (e.g., 70 -> 1970)
-          if (year <= 68) { 
+        
+        // If the parsed year is between 0 and 99 (inclusive), 
+        // it's likely a 20th/21st century year that needs adjustment.
+        if (year >= 0 && year < 100) {
+          if (year <= 68) { // Heuristic: years 0-68 are 2000-2068
             parsed.setFullYear(year + 2000);
-          } else { 
+          } else { // years 69-99 are 1969-1999
             parsed.setFullYear(year + 1900);
           }
+          // After adjusting, if it becomes invalid, this format attempt failed.
+          if (!isValid(parsed)) {
+            continue; // Try next format
+          }
         }
-        return parsed;
+        return parsed; // Return the (potentially adjusted and still valid) date
       }
     } catch (e) {
       // continue trying other formats
     }
   }
+
   // Try ISO parse as a last resort for strings
   try {
     const isoParsed = parseISO(dateString);
-    if (isValid(isoParsed)) return isoParsed;
+    if (isValid(isoParsed)) {
+      let year = isoParsed.getFullYear();
+      if (year >= 0 && year < 100) {
+        if (year <= 68) {
+          isoParsed.setFullYear(year + 2000);
+        } else {
+          isoParsed.setFullYear(year + 1900);
+        }
+        if (!isValid(isoParsed)) {
+          return null; // Adjustment made ISO date invalid
+        }
+      }
+      return isoParsed;
+    }
   } catch (e) { /* ignore */ }
 
   return null;
@@ -199,8 +213,10 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
       if (isTimeColumn && !isDateColumn) { 
         return format(cellValue, 'HH:mm:ss');
       }
+      // Default for date columns that might also be time or for ambiguous columns
       if (cellValue.getHours() === 0 && cellValue.getMinutes() === 0 && cellValue.getSeconds() === 0 && cellValue.getMilliseconds() === 0) {
-        return format(cellValue, 'dd.MM.yyyy', { locale: tr });
+        // If it's a date column and time is midnight, just show date
+        if (isDateColumn) return format(cellValue, 'dd.MM.yyyy', { locale: tr });
       }
       return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
     }
@@ -217,8 +233,9 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
         if (isTimeColumn && !isDateColumn) { 
           return format(parsedDate, 'HH:mm:ss');
         }
+        // Default for date columns that might also be time or for ambiguous columns
         if (parsedDate.getHours() === 0 && parsedDate.getMinutes() === 0 && parsedDate.getSeconds() === 0 && parsedDate.getMilliseconds() === 0) {
-            return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
+            if (isDateColumn) return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
         }
         return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
       }
@@ -227,14 +244,17 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
     
     // Handle numbers (could be Excel date serials)
     if (typeof cellValue === 'number') {
-      if (cellValue > 0 && cellValue < 2958466) { 
+      if (cellValue > 0 && cellValue < 2958466) { // Check for Excel serial date range
           try {
+              // Excel epoch: December 30, 1899 (day 0)
+              // JavaScript epoch: January 1, 1970
+              // Excel has a bug where it thinks 1900 is a leap year.
               const excelEpoch = new Date(1899, 11, 30); 
+              // Subtract 1 if the serial date is after Feb 28, 1900 (day 60 in Excel) to account for the leap year bug.
               const dateObj = new Date(excelEpoch.getTime() + (cellValue - (cellValue > 60 ? 1 : 0) ) * 24 * 60 * 60 * 1000);
               
-              let finalDateObj = dateObj; // No timezone correction here, assuming direct usage with date-fns
+              let finalDateObj = dateObj;
 
-              // Year adjustment for numeric dates if they resulted in 0-99 year
               let year = finalDateObj.getFullYear();
               if (isValid(finalDateObj) && year >=0 && year < 100) {
                   if(year <= 68) {
@@ -251,22 +271,20 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
                       return format(finalDateObj, 'dd.MM.yyyy', { locale: tr });
                   }
                   if (isTimeColumn && !isDateColumn) {
-                      // If it's a time value (Excel serial < 1), format as time
-                      if (cellValue < 1 && cellValue > 0) return format(finalDateObj, 'HH:mm:ss');
-                      // Otherwise, if it's a date serial that became time column, consider full format or just date
-                      // For consistency, if it's a numeric date forced into time column, let's check time parts.
+                      if (cellValue < 1 && cellValue > 0) return format(finalDateObj, 'HH:mm:ss'); // Excel time is fraction of a day
+                      // If it's a whole number date that landed in a time column, show time if non-midnight
                       if (finalDateObj.getHours() !== 0 || finalDateObj.getMinutes() !== 0 || finalDateObj.getSeconds() !== 0) {
                         return format(finalDateObj, 'HH:mm:ss');
                       }
-                      // If no time part, and forced as time, this is ambiguous. Fallback to string.
-                      return format(finalDateObj, 'dd.MM.yyyy', { locale: tr }); // Or String(cellValue)
+                      // If it's midnight, and forced as time, maybe show date for clarity or just time "00:00:00"
+                      return format(finalDateObj, 'HH:mm:ss'); 
                   }
                   // Ambiguous or date+time column
                   if (finalDateObj.getHours() === 0 && finalDateObj.getMinutes() === 0 && finalDateObj.getSeconds() === 0 && finalDateObj.getMilliseconds() === 0) {
-                     if (cellValue < 1 && cellValue > 0) return format(finalDateObj, 'HH:mm:ss'); 
-                     return format(finalDateObj, 'dd.MM.yyyy', { locale: tr });
+                     if (cellValue < 1 && cellValue > 0) return format(finalDateObj, 'HH:mm:ss'); // Excel time value
+                     return format(finalDateObj, 'dd.MM.yyyy', { locale: tr }); // Date only if midnight
                   }
-                  return format(finalDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
+                  return format(finalDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr }); // Full date and time
               }
           } catch (e) { /* Fall through to string conversion */ }
       }
@@ -278,7 +296,7 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
   };
 
   return (
-    <Card className="w-full mt-6 shadow-xl rounded-lg">
+    <Card className="w-full mt-6 shadow-xl rounded-lg overflow-hidden"> {/* Added overflow-hidden */}
       <CardHeader className="border-b">
         <CardTitle className="flex items-center text-2xl text-primary">
           <Table2 className="mr-3 h-7 w-7" />
@@ -296,8 +314,8 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
             <p className="text-sm">Lütfen dosya yükleyerek yeni bir birleştirme yapın veya dosyalarınızı kontrol edin.</p>
           </div>
         ) : (
-          <ScrollArea className="max-h-[calc(100vh-280px)] w-full overflow-auto"> 
-            <Table className="min-w-full"> 
+          <ScrollArea className="max-h-[calc(100vh-280px)] w-full"> {/* Removed overflow-auto from here */}
+            <Table className="min-w-full table-auto"> {/* Removed whitespace-nowrap */}
               <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
                 <TableRow className="border-b-0">
                   {displayHeadersWithSiraNo.map((header, index) => (
@@ -316,7 +334,7 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
                     {displayHeadersWithSiraNo.map((header, cellIndex) => ( 
                       <TableCell 
                         key={cellIndex} 
-                        className="text-foreground px-3 py-2 text-left text-sm"
+                        className="text-foreground px-3 py-2 text-left text-sm break-words" // Added break-words
                         title={formatCellContent(row[cellIndex], header)} 
                       >
                         {formatCellContent(row[cellIndex], header)}
