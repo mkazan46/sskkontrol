@@ -22,6 +22,9 @@ const ISLEM_TYPES = {
 
 const ANALYSIS_MARKER_HEADER = "__isAnalyzedDeletion";
 const ANALYSIS_MARKER_VALUE = "ANALYZED_DELETION_ROW_MARKER";
+const CONSUMED_BY_ANALYSIS_MARKER_HEADER = "__isConsumedByAnalysis";
+const CONSUMED_BY_ANALYSIS_MARKER_VALUE = "CONSUMED_BY_ANALYSIS_ROW_MARKER";
+
 
 function findColumnIndex(headers: string[], targetHeaders: string[], headerOriginalCase: string): number {
   const lowerCaseTargetHeaders = targetHeaders.map(h => h.toLocaleLowerCase('tr-TR'));
@@ -102,25 +105,47 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
 
   if (tcColIdx === -1 || groupingDateColIdx === -1 || islemColIdx === -1) {
     console.error("Gerekli sütunlar (TC Kimlik No, Tarih (Gruplama), İşlem) bulunamadı. Analiz yapılamıyor.");
-    // Return original data with an error message in a new column if critical columns are missing
     const errorHeader = "Analiz Hatası";
-    if (!originalHeaders.includes(errorHeader)) {
-        const headersWithError = [...originalHeaders, errorHeader];
-        const rowsWithError = originalRows.map(row => [...row, "TC Kimlik No, Tarih (Gruplama) veya İşlem sütunu bulunamadı."]);
-        return { headers: headersWithError, rows: rowsWithError };
+    let headersWithError = [...originalHeaders];
+    if (!headersWithError.includes(errorHeader)) {
+        headersWithError.push(errorHeader);
     }
-    return mergedData; // Return as is if error column already exists or no modification needed
+    const errorColIdx = headersWithError.indexOf(errorHeader);
+    const rowsWithError = originalRows.map(row => {
+        const newRow = [...row];
+        if (newRow.length < headersWithError.length) {
+            newRow.length = headersWithError.length;
+            newRow.fill("", row.length);
+        }
+        newRow[errorColIdx] = "TC Kimlik No, Tarih (Gruplama) veya İşlem sütunu bulunamadı.";
+        return newRow;
+    });
+    return { headers: headersWithError, rows: rowsWithError };
   }
   
-  // Add a marker header if it doesn't exist
-  const finalHeaders = originalHeaders.includes(ANALYSIS_MARKER_HEADER) 
-    ? [...originalHeaders] 
-    : [...originalHeaders, ANALYSIS_MARKER_HEADER];
+  let finalHeaders = [...originalHeaders];
+  if (!finalHeaders.includes(ANALYSIS_MARKER_HEADER)) {
+    finalHeaders.push(ANALYSIS_MARKER_HEADER);
+  }
+  if (!finalHeaders.includes(CONSUMED_BY_ANALYSIS_MARKER_HEADER)) {
+    finalHeaders.push(CONSUMED_BY_ANALYSIS_MARKER_HEADER);
+  }
   
-  const markerColIdx = finalHeaders.indexOf(ANALYSIS_MARKER_HEADER);
+  const analysisMarkerColIdx = finalHeaders.indexOf(ANALYSIS_MARKER_HEADER);
+  const consumedMarkerColIdx = finalHeaders.indexOf(CONSUMED_BY_ANALYSIS_MARKER_HEADER);
+
+  // Create rows that are wide enough for the new markers from the start
+  const workingRows = originalRows.map(row => {
+    const newRow = [...row];
+    if (newRow.length < finalHeaders.length) {
+      newRow.length = finalHeaders.length;
+      newRow.fill("", row.length);
+    }
+    return newRow;
+  });
 
   const recordsByTcDate = new Map<string, { giris: any[][], cikis: any[][] }>();
-  originalRows.forEach(row => {
+  workingRows.forEach(row => {
     const tc = String(row[tcColIdx] || '').trim();
     const dateValue = row[groupingDateColIdx];
     const islem = String(row[islemColIdx] || '').toLocaleLowerCase('tr-TR').trim();
@@ -128,7 +153,7 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
     const parsedGroupingDate = parseTurkishDate(dateValue);
     if (!tc || !parsedGroupingDate) return; 
 
-    const dateKey = format(parsedGroupingDate, 'yyyy-MM-dd'); // Use yyyy-MM-dd for consistent key
+    const dateKey = format(parsedGroupingDate, 'yyyy-MM-dd');
     const mapKey = `${tc}_${dateKey}`;
 
     if (!recordsByTcDate.has(mapKey)) {
@@ -136,21 +161,16 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
     }
     const group = recordsByTcDate.get(mapKey)!;
 
+    // Store references to rows in workingRows
     if (islem.includes(ISLEM_TYPES.GIRIS) || islem.includes(ISLEM_TYPES.KAYIT)) group.giris.push(row);
     else if (islem.includes(ISLEM_TYPES.CIKIS)) group.cikis.push(row);
-    // Silme rows are processed directly later, not stored in this map for this specific logic
   });
 
-  const processedRows = originalRows.map(originalRow => {
-    // Ensure each row has space for the marker, initialized to not analyzed
-    const rowWithMarkerSpace = [...originalRow];
-    if (rowWithMarkerSpace.length < finalHeaders.length) {
-      rowWithMarkerSpace[markerColIdx] = ""; // Initialize marker cell if new
-    }
-
-    const tc = String(originalRow[tcColIdx] || '').trim();
-    const groupingDateValue = originalRow[groupingDateColIdx];
-    const currentIslem = String(originalRow[islemColIdx] || '').trim();
+  // Process rows - modify workingRows directly for consumed markers
+  workingRows.forEach(rowToProcess => {
+    const tc = String(rowToProcess[tcColIdx] || '').trim();
+    const groupingDateValue = rowToProcess[groupingDateColIdx];
+    const currentIslem = String(rowToProcess[islemColIdx] || '').trim();
     const currentIslemLc = currentIslem.toLocaleLowerCase('tr-TR');
     const parsedGroupingDate = parseTurkishDate(groupingDateValue);
 
@@ -160,37 +180,37 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
       const group = recordsByTcDate.get(mapKey);
 
       if (group && group.giris.length > 0) {
-        // Sort giriş records by their event time to find the earliest
         group.giris.sort((a, b) => {
             const timeA = getFormattedEventDateTime(a, groupingDateColIdx, eventSaatColIdx, islemColIdx);
             const timeB = getFormattedEventDateTime(b, groupingDateColIdx, eventSaatColIdx, islemColIdx);
             return (timeA || "").localeCompare(timeB || "");
         });
-        const ilgiliGirisRow = group.giris[0];
-        const girisIslemTuru = String(ilgiliGirisRow[islemColIdx] || '').trim();
+        const ilgiliGirisRow = group.giris[0]; // This is a row from workingRows
         
-        // Modify the "İşlem" cell of the silme row
-        rowWithMarkerSpace[islemColIdx] = `${girisIslemTuru} / ${currentIslem}`;
-        
-        // Modify the "Saat" cell of the silme row with the "Giriş" event's time
-        const girisEventTimeStr = extractTimeFromRow(ilgiliGirisRow, eventSaatColIdx, islemColIdx, groupingDateColIdx);
-        if (eventSaatColIdx !== -1) {
-          rowWithMarkerSpace[eventSaatColIdx] = girisEventTimeStr;
+        if (ilgiliGirisRow && ilgiliGirisRow[consumedMarkerColIdx] !== CONSUMED_BY_ANALYSIS_MARKER_VALUE) {
+            const girisIslemTuru = String(ilgiliGirisRow[islemColIdx] || '').trim();
+            
+            rowToProcess[islemColIdx] = `${girisIslemTuru} / ${currentIslem}`;
+            
+            const girisEventTimeStr = extractTimeFromRow(ilgiliGirisRow, eventSaatColIdx, islemColIdx, groupingDateColIdx);
+            if (eventSaatColIdx !== -1) {
+              rowToProcess[eventSaatColIdx] = girisEventTimeStr;
+            } else {
+              console.warn("No 'Saat' column index found to update with giriş time for analyzed silme record.");
+            }
+            
+            rowToProcess[analysisMarkerColIdx] = ANALYSIS_MARKER_VALUE;
+            ilgiliGirisRow[consumedMarkerColIdx] = CONSUMED_BY_ANALYSIS_MARKER_VALUE; // Mark original giriş row as consumed
         } else {
-            // If no dedicated Saat column, this is tricky. For now, we assume 'Saat' column exists for this.
-            // If not, the logic for where to put the time would need to be more complex.
-            console.warn("No 'Saat' column index found to update with giriş time for analyzed silme record.");
+            // No available (non-consumed) giriş found, or giriş already consumed
+            rowToProcess[analysisMarkerColIdx] = ANALYSIS_MARKER_VALUE; 
         }
-        
-        // Mark this row as analyzed
-        rowWithMarkerSpace[markerColIdx] = ANALYSIS_MARKER_VALUE;
+
       } else {
-        // No related giriş found, mark as analyzed but with original silme details
-        rowWithMarkerSpace[markerColIdx] = ANALYSIS_MARKER_VALUE; // Still mark it to show it was processed
+        rowToProcess[analysisMarkerColIdx] = ANALYSIS_MARKER_VALUE;
       }
     }
-    return rowWithMarkerSpace;
   });
   
-  return { headers: finalHeaders, rows: processedRows };
+  return { headers: finalHeaders, rows: workingRows };
 }
