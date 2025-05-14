@@ -25,31 +25,85 @@ interface MergedDataTableProps {
 const DATE_HEADERS_TR = ["tarih", "işlem tarihi", "doğum tarihi", "kayıt tarihi", "başlangıç tarihi", "bitiş tarihi", "geçerlilik tarihi"];
 const TIME_HEADERS_TR = ["işlem saati", "saat", "başlangıç saati", "bitiş saati", "kayıt saati"];
 
-// Function to attempt parsing various Turkish date formats
+// Function to attempt parsing various Turkish and common international date formats
 const parseTurkishDate = (dateString: string): Date | null => {
   const formats = [
+    // Turkish formats (dd.MM.yyyy)
     'dd.MM.yyyy HH:mm:ss',
     'dd.MM.yyyy H:mm:ss',
     'd.M.yyyy HH:mm:ss',
     'd.M.yyyy H:mm:ss',
-    'dd/MM/yyyy HH:mm:ss',
-    'dd/MM/yyyy H:mm:ss',
-    'd/M/yyyy HH:mm:ss',
-    'd/M/yyyy H:mm:ss',
     'dd.MM.yyyy HH:mm',
     'dd.MM.yyyy H:mm',
     'd.M.yyyy HH:mm',
     'd.M.yyyy H:mm',
+    'dd.MM.yyyy',
+    'd.M.yyyy',
+
+    // Turkish formats (dd/MM/yyyy)
+    'dd/MM/yyyy HH:mm:ss',
+    'dd/MM/yyyy H:mm:ss',
+    'd/M/yyyy HH:mm:ss',
+    'd/M/yyyy H:mm:ss',
     'dd/MM/yyyy HH:mm',
     'dd/MM/yyyy H:mm',
     'd/M/yyyy HH:mm',
     'd/M/yyyy H:mm',
-    'dd.MM.yyyy',
-    'd.M.yyyy',
     'dd/MM/yyyy',
     'd/M/yyyy',
-    'yyyy-MM-dd HH:mm:ss', // ISO-like
-    'yyyy-MM-dd' // ISO-like date only
+
+    // ISO-like formats
+    'yyyy-MM-dd HH:mm:ss',
+    'yyyy-MM-dd HH:mm',
+    'yyyy-MM-dd',
+    
+    // US formats (M/d/yy) - Adding these to handle "3/21/25"
+    'M/d/yy HH:mm:ss',
+    'M/d/yy H:mm:ss',
+    'M/d/yy HH:mm',
+    'M/d/yy H:mm',
+    'M/d/yy',
+    'MM/dd/yy HH:mm:ss',
+    'MM/dd/yy H:mm:ss',
+    'MM/dd/yy HH:mm',
+    'MM/dd/yy H:mm',
+    'MM/dd/yy',
+
+    // US formats (M/d/yyyy)
+    'M/d/yyyy HH:mm:ss',
+    'M/d/yyyy H:mm:ss',
+    'M/d/yyyy HH:mm',
+    'M/d/yyyy H:mm',
+    'M/d/yyyy',
+    'MM/dd/yyyy HH:mm:ss',
+    'MM/dd/yyyy H:mm:ss',
+    'MM/dd/yyyy HH:mm',
+    'MM/dd/yyyy H:mm',
+    'MM/dd/yyyy',
+
+    // US formats with hyphens (M-d-yy)
+    'M-d-yy HH:mm:ss',
+    'M-d-yy H:mm:ss',
+    'M-d-yy HH:mm',
+    'M-d-yy H:mm',
+    'M-d-yy',
+    'MM-dd-yy HH:mm:ss',
+    'MM-dd-yy H:mm:ss',
+    'MM-dd-yy HH:mm',
+    'MM-dd-yy H:mm',
+    'MM-dd-yy',
+
+    // US formats with hyphens (M-d-yyyy)
+    'M-d-yyyy HH:mm:ss',
+    'M-d-yyyy H:mm:ss',
+    'M-d-yyyy HH:mm',
+    'M-d-yyyy H:mm',
+    'M-d-yyyy',
+    'MM-dd-yyyy HH:mm:ss',
+    'MM-dd-yyyy H:mm:ss',
+    'MM-dd-yyyy HH:mm',
+    'MM-dd-yyyy H:mm',
+    'MM-dd-yyyy',
   ];
 
   for (const fmt of formats) {
@@ -116,76 +170,71 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
       if (isTimeColumn && !isDateColumn) { // Exclusively a time column
         return format(cellValue, 'HH:mm:ss');
       }
-      if (isDateColumn && isTimeColumn) { // Column is marked as both (e.g. "kayıt zamanı")
-        return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
-      }
-      // Default for Date objects not in specified headers:
-      // Guess based on content: if time is midnight, format as date only.
+      // If it's in both lists (e.g. "kayıt zamanı") or ambiguously a date/time column not specifically in only one list
+      // Default to full date-time if time component exists, otherwise date only.
       if (cellValue.getHours() === 0 && cellValue.getMinutes() === 0 && cellValue.getSeconds() === 0 && cellValue.getMilliseconds() === 0) {
         return format(cellValue, 'dd.MM.yyyy', { locale: tr });
       }
-      // Otherwise, format as full date-time as a sensible default
       return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
     }
 
     // Handle strings that might be dates or times
     if (typeof cellValue === 'string') {
       const trimmedValue = cellValue.trim();
-      if (isDateColumn || isTimeColumn) { // Only attempt parsing if in a date/time column
-        const parsedDate = parseTurkishDate(trimmedValue);
-        if (parsedDate && isValid(parsedDate)) {
-          if (isDateColumn && !isTimeColumn) { // Exclusively a date column
-             return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
-          }
-          if (isTimeColumn && !isDateColumn) { // Exclusively a time column
-            return format(parsedDate, 'HH:mm:ss');
-          }
-          // If it could be both (e.g. header is in both lists, or logic leads here)
-          return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
+      const parsedDate = parseTurkishDate(trimmedValue); // Use our enhanced parser
+      
+      if (parsedDate && isValid(parsedDate)) {
+        if (isDateColumn && !isTimeColumn) { // Exclusively a date column
+            return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
         }
+        if (isTimeColumn && !isDateColumn) { // Exclusively a time column
+          return format(parsedDate, 'HH:mm:ss');
+        }
+        // If it's in both lists or ambiguously a date/time column
+        // Default to full date-time if time component exists, otherwise date only.
+        if (parsedDate.getHours() === 0 && parsedDate.getMinutes() === 0 && parsedDate.getSeconds() === 0 && parsedDate.getMilliseconds() === 0) {
+            return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
+        }
+        return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
       }
-      return trimmedValue; // original string if not a parsable date/time or not in date/time column
+      return trimmedValue; // original string if not a parsable date/time
     }
     
-    // Handle numbers (could be Excel date serials if cellDates:false, or if cellDates:true failed)
+    // Handle numbers (could be Excel date serials)
     if (typeof cellValue === 'number') {
-      if (isDateColumn || isTimeColumn) { // Only attempt conversion if it's a date/time column
-         // Plausible range for Excel dates. Excel time-only values are < 1.
-        if (cellValue > 0 && cellValue < 2958466) {
-            try {
-                // This is the existing simplified conversion from the codebase.
-                // It assumes Windows Excel 1900 date system and attempts a local time conversion.
-                // `cellDates: true` in `excel-utils.ts` is the primary mechanism for date conversion.
-                // This numeric conversion is a fallback.
-                const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
-                const dateObj = new Date(excelEpoch.getTime() + (cellValue -1) * 24 * 60 * 60 * 1000);
-                // The following line attempts to adjust for timezone, assuming the calculated dateObj is UTC.
-                // This can be problematic. date-fns `format` handles localization from a JS Date object well.
-                // For simplicity, we'll keep the existing numeric conversion logic structure but apply consistent formatting.
-                // To be more robust, one would ideally use a proper Excel SSF parser or rely solely on `cellDates: true`.
-                const finalDateObj = new Date(dateObj.getTime() + dateObj.getTimezoneOffset() * 60 * 1000);
+      // Plausible range for Excel dates. Excel time-only values are < 1.
+      if (cellValue > 0 && cellValue < 2958466) { // Common Excel date serial range
+          try {
+              const excelEpoch = new Date(1899, 11, 30); // December 30, 1899 for Windows Excel
+              // XLSX library with cellDates:true should handle this, but as a fallback:
+              const dateObj = new Date(excelEpoch.getTime() + (cellValue - (cellValue > 60 ? 1 : 0) ) * 24 * 60 * 60 * 1000);
+              // The above (cellValue > 60 ? 1:0) is a simplified leap year adjustment for 1900, 
+              // but cellDates:true should be more accurate. This numeric conversion is a robust fallback.
+              
+              // Correction for timezone offset if the date was intended as local
+              // const finalDateObj = new Date(dateObj.getTime() + dateObj.getTimezoneOffset() * 60 * 1000);
+              // Forcing UTC interpretation of serial and then formatting seems more reliable with date-fns
+              // The issue with simple offset is that it double-applies if dateObj is already local.
+              // Assuming dateObj from serial is effectively UTC for date-fns to handle localization.
+              const finalDateObj = dateObj;
 
 
-                if (isValid(finalDateObj)) { // Use finalDateObj after timezone adjustment attempt
-                    if (isDateColumn && !isTimeColumn) {
-                        return format(finalDateObj, 'dd.MM.yyyy', { locale: tr });
-                    }
-                    if (isTimeColumn && !isDateColumn) {
-                        // If the original number was < 1, it's likely just time.
-                        // Otherwise, it might be a full date being shown in a time column.
-                        return format(finalDateObj, 'HH:mm:ss');
-                    }
-                    if (isDateColumn && isTimeColumn) { // Column is marked as both
-                        return format(finalDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
-                    }
-                     // Fallback for numeric dates in ambiguously typed columns or if not fitting above
-                    if (cellValue > 0 && cellValue < 1) { // Excel time is a fraction of a day
-                        return format(finalDateObj, 'HH:mm:ss');
-                    }
-                    return format(finalDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
-                }
-            } catch (e) { /* Fall through to string conversion */ }
-        }
+              if (isValid(finalDateObj)) {
+                  if (isDateColumn && !isTimeColumn) {
+                      return format(finalDateObj, 'dd.MM.yyyy', { locale: tr });
+                  }
+                  if (isTimeColumn && !isDateColumn) {
+                      return format(finalDateObj, 'HH:mm:ss');
+                  }
+                  // Ambiguous or date+time column
+                  if (finalDateObj.getHours() === 0 && finalDateObj.getMinutes() === 0 && finalDateObj.getSeconds() === 0 && finalDateObj.getMilliseconds() === 0) {
+                     // If it's a whole day (like from an Excel date serial with no time part)
+                     if (cellValue < 1) return format(finalDateObj, 'HH:mm:ss'); // Excel time value
+                     return format(finalDateObj, 'dd.MM.yyyy', { locale: tr });
+                  }
+                  return format(finalDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
+              }
+          } catch (e) { /* Fall through to string conversion */ }
       }
       return cellValue.toLocaleString('tr-TR'); // For non-date numbers or if conversion failed
     }
