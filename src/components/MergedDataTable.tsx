@@ -202,7 +202,7 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
           </div>
         ) : (
           <ScrollArea className="max-h-[calc(100vh-280px)] w-full overflow-auto"> {/* Max height adjusted slightly */}
-            <Table className="min-w-full whitespace-nowrap"> {/* whitespace-nowrap for horizontal scroll performance */}
+            <Table className="min-w-full"> {/* Removed whitespace-nowrap */}
               <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
                 <TableRow className="border-b-0">
                   {displayHeadersWithSiraNo.map((header, index) => (
@@ -244,3 +244,4 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
     </Card>
   );
 }
+
