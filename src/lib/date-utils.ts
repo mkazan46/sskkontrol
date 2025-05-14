@@ -6,7 +6,12 @@ import { tr } from 'date-fns/locale';
 
 // Extended list of headers that might contain date or time values in Turkish
 export const DATE_HEADERS_TR_FORMATTING = ["tarih", "işlem tarihi", "doğum tarihi", "kayıt tarihi", "başlangıç tarihi", "bitiş tarihi", "geçerlilik tarihi"];
-export const TIME_HEADERS_TR_FORMATTING = ["işlem saati", "saat", "başlangıç saati", "bitiş saati", "kayıt saati"];
+// Added new analysis-specific time headers
+export const TIME_HEADERS_TR_FORMATTING = [
+    "işlem saati", "saat", "başlangıç saati", "bitiş saati", "kayıt saati",
+    "analiz: giriş saati", "analiz: çıkış saati", "analiz: silme saati", // New analysis headers for time formatting
+    "ilgili giriş saati", "ilgili çıkış saati", "silme kaydı saati" // Alternative naming used in previous analysis logic
+];
 
 // Function to attempt parsing various Turkish and common international date formats
 export const parseTurkishDate = (dateString: string | number | Date): Date | null => {
@@ -14,6 +19,7 @@ export const parseTurkishDate = (dateString: string | number | Date): Date | nul
     if (!isValid(dateString)) return null;
     let year = dateString.getFullYear();
     // Heuristic for 2-digit years that became e.g. 25 AD from cellDates: true
+    // or years like 0024, 0025 due to data entry or other parsing issues.
     if (year >= 0 && year < 100) { 
       if (year <= 68) { // Assuming years 0-68 are 2000-2068
         dateString.setFullYear(year + 2000);
@@ -62,12 +68,12 @@ export const parseTurkishDate = (dateString: string | number | Date): Date | nul
     // Turkish formats (dd.MM.yyyy)
     'dd.MM.yyyy HH:mm:ss', 'dd.MM.yyyy H:mm:ss', 'd.M.yyyy HH:mm:ss', 'd.M.yyyy H:mm:ss',
     'dd.MM.yyyy HH:mm', 'dd.MM.yyyy H:mm', 'd.M.yyyy HH:mm', 'd.M.yyyy H:mm',
-    'dd.MM.yyyy', 'd.M.yyyy',
+    'dd.MM.yyyy', 'd.M.yyyy', 'dd.MM.yy', 'd.M.yy', // Added yy for Turkish
 
     // Turkish formats (dd/MM/yyyy)
     'dd/MM/yyyy HH:mm:ss', 'dd/MM/yyyy H:mm:ss', 'd/M/yyyy HH:mm:ss', 'd/M/yyyy H:mm:ss',
     'dd/MM/yyyy HH:mm', 'dd/MM/yyyy H:mm', 'd/M/yyyy HH:mm', 'd/M/yyyy H:mm',
-    'dd/MM/yyyy', 'd/M/yyyy',
+    'dd/MM/yyyy', 'd/M/yyyy', 'dd/MM/yy', 'd/M/yy', // Added yy for Turkish
 
     // ISO-like formats
     'yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm', 'yyyy-MM-dd',

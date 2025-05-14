@@ -17,10 +17,12 @@ const ISLEM_TYPES = {
   CIKIS: "çıkış",
 };
 
-interface ProcessedDeletionData {
-  headers: string[];
-  rows: any[][];
-}
+const ANALYSIS_HEADERS = [
+  "Analiz: Giriş Saati",
+  "Analiz: Çıkış Saati",
+  "Analiz: Silme Saati",
+  "Analiz: Silme Detayı"
+];
 
 function findColumnIndex(headers: string[], targetHeaders: string[], headerOriginalCase: string): number {
   const lowerCaseTargetHeaders = targetHeaders.map(h => h.toLocaleLowerCase('tr-TR'));
@@ -35,7 +37,33 @@ function findColumnIndex(headers: string[], targetHeaders: string[], headerOrigi
   return -1; 
 }
 
-export function extractDeletionRelatedRecords(mergedData: MergedExcelData): ProcessedDeletionData {
+// Extracts time from either dedicated 'Saat' column or 'İşlem' column if applicable
+function extractTimeFromRow(row: any[], saatColIdx: number, islemColIdx: number, tarihColIdx: number): string {
+    let timeValue = saatColIdx !== -1 ? row[saatColIdx] : null;
+    
+    // If no 'Saat' column or 'Saat' column is empty/same as date, try 'İşlem' column
+    if (saatColIdx === -1 || timeValue === null || timeValue === "" || 
+        (tarihColIdx !== -1 && String(row[tarihColIdx]) === String(timeValue))) {
+      if (islemColIdx !== -1 && row[islemColIdx] !== null && String(row[islemColIdx]).trim() !== "") {
+        const islemContent = String(row[islemColIdx]);
+        // Basic regex to find time-like patterns (e.g., 10:30, 08:15:00)
+        const timePattern = /\b(\d{1,2}:\d{2}(:\d{2})?)\b/;
+        const match = islemContent.match(timePattern);
+        if (match && match[1]) {
+          timeValue = match[1];
+        } else if (tarihColIdx !== -1 && row[tarihColIdx] !== row[islemColIdx]) {
+           // If 'İşlem' is different from 'Tarih', it might contain the time as part of a datetime string
+           timeValue = row[islemColIdx];
+        }
+      }
+    }
+
+    const parsedTime = parseTurkishDate(timeValue); // parseTurkishDate can handle time-only or datetime strings
+    return parsedTime ? formatDateToHHMMSS(parsedTime) : (typeof timeValue === 'string' && timeValue.match(/\d{1,2}:\d{2}/) ? timeValue : "");
+}
+
+
+export function extractDeletionRelatedRecords(mergedData: MergedExcelData): MergedExcelData {
   if (!mergedData || mergedData.rows.length === 0) {
     return { headers: [], rows: [] };
   }
@@ -43,42 +71,33 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Proc
   const { headers: originalHeaders, rows: originalRows } = mergedData;
 
   const tcColIdx = findColumnIndex(originalHeaders, TC_KIMLIK_NO_HEADERS_ANALYSIS, "TC Kimlik No");
-  const adSoyadColIdx = findColumnIndex(originalHeaders, AD_SOYAD_HEADERS_ANALYSIS, "Adı Soyadı");
   const tarihColIdx = findColumnIndex(originalHeaders, TARIH_HEADERS_ANALYSIS, "Tarih");
   const islemColIdx = findColumnIndex(originalHeaders, ISLEM_HEADERS_ANALYSIS, "İşlem");
-  const saatColIdx = findColumnIndex(originalHeaders, SAAT_HEADERS_ANALYSIS, "Saat");
+  const saatColIdx = findColumnIndex(originalHeaders, SAAT_HEADERS_ANALYSIS, "Saat"); // May be -1
 
   if (tcColIdx === -1 || tarihColIdx === -1 || islemColIdx === -1) {
     console.error("Gerekli sütunlar (TC Kimlik No, Tarih, İşlem) bulunamadı. Analiz yapılamıyor.");
-    // Return original headers but with a message row, or specific error headers
+    // Return original data with an error message or indication
+    // For now, we return original data as the analysis cannot proceed.
+    // A toast message will be shown from the calling page.
     return { 
-        headers: ["Hata"], 
-        rows: [["TC Kimlik No, Tarih veya İşlem sütunu bulunamadığı için silme analizi yapılamadı."]] 
+        headers: [...originalHeaders, "Analiz Hatası"], 
+        rows: originalRows.map(row => [...row, "TC Kimlik No, Tarih veya İşlem sütunu bulunamadı."]) 
     };
   }
+  
+  const augmentedHeaders = [...originalHeaders, ...ANALYSIS_HEADERS];
+  const processedRows: any[][] = [];
 
-  const outputHeaders = [
-    "TC Kimlik No", 
-    "Adı Soyadı", 
-    "İşlem Tarihi", 
-    "Giriş Saati", 
-    "Çıkış Saati", 
-    "Silme Saati", 
-    "Silme İşlem Detayı"
-  ];
-  const analysisRows: any[][] = [];
-
-  // Group records by TC and Date for easier lookup
-  // Key: "TCKimlikNo_YYYY-MM-DD", Value: { giris: row[], cikis: row[], silme: row[] }
+  // Group records by TC and Date string for easier lookup of related entries
   const recordsByTcDate = new Map<string, { giris: any[][], cikis: any[][], silme: any[][] }>();
-
   originalRows.forEach(row => {
     const tc = String(row[tcColIdx] || '').trim();
     const dateValue = row[tarihColIdx];
     const islem = String(row[islemColIdx] || '').toLocaleLowerCase('tr-TR').trim();
     
     const parsedDate = parseTurkishDate(dateValue);
-    if (!tc || !parsedDate) return; // Skip if no TC or invalid date
+    if (!tc || !parsedDate) return; 
 
     const dateKey = formatDateToYYYYMMDD(parsedDate);
     const mapKey = `${tc}_${dateKey}`;
@@ -88,82 +107,56 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Proc
     }
     const group = recordsByTcDate.get(mapKey)!;
 
+    // Store the original row reference
     if (islem.includes(ISLEM_TYPES.GIRIS)) group.giris.push(row);
     else if (islem.includes(ISLEM_TYPES.CIKIS)) group.cikis.push(row);
     else if (islem.includes(ISLEM_TYPES.SILME)) group.silme.push(row);
   });
 
-  // Process groups that have "silme" records
-  for (const [_mapKey, group] of recordsByTcDate) {
-    if (group.silme.length > 0) {
-      group.silme.forEach(silmeRow => {
-        const tc = String(silmeRow[tcColIdx] || '').trim();
-        const adSoyad = adSoyadColIdx !== -1 ? String(silmeRow[adSoyadColIdx] || '').trim() : "";
-        
-        const silmeDateValue = silmeRow[tarihColIdx];
-        const parsedSilmeDate = parseTurkishDate(silmeDateValue);
-        const formattedSilmeDate = parsedSilmeDate ? formatDateToDDMMYYYY(parsedSilmeDate) : "N/A";
 
-        const silmeSaatValue = saatColIdx !== -1 ? silmeRow[saatColIdx] : (islemColIdx !== -1 && silmeRow[islemColIdx] !== silmeRow[tarihColIdx] ? silmeRow[islemColIdx] : "N/A"); // Attempt to get from 'Saat' or 'İşlem' if different from date
-        const parsedSilmeSaat = parseTurkishDate(silmeSaatValue); // parseTurkishDate can handle time-only strings if they are part of its formats
-        const formattedSilmeSaat = parsedSilmeSaat ? formatDateToHHMMSS(parsedSilmeSaat) : (typeof silmeSaatValue === 'string' && silmeSaatValue.match(/\d{1,2}:\d{2}/) ? silmeSaatValue : "N/A");
-        
-        const silmeIslemDetayi = String(silmeRow[islemColIdx] || '').trim();
+  for (const originalRow of originalRows) {
+    const tc = String(originalRow[tcColIdx] || '').trim();
+    const dateValue = originalRow[tarihColIdx];
+    const islem = String(originalRow[islemColIdx] || '').toLocaleLowerCase('tr-TR').trim();
+    const parsedOriginalDate = parseTurkishDate(dateValue);
 
-        // Find first giriş and çıkış for this TC/Date
-        let girisSaatStr = "";
+    let ilgiliGirisSaati = "";
+    let ilgiliCikisSaati = "";
+    let silmeKaydiSaati = "";
+    let silmeKaydiAciklamasi = "";
+
+    if (tc && parsedOriginalDate && islem.includes(ISLEM_TYPES.SILME)) {
+      silmeKaydiSaati = extractTimeFromRow(originalRow, saatColIdx, islemColIdx, tarihColIdx);
+      silmeKaydiAciklamasi = String(originalRow[islemColIdx] || '').trim();
+      
+      const dateKey = formatDateToYYYYMMDD(parsedOriginalDate);
+      const mapKey = `${tc}_${dateKey}`;
+      const group = recordsByTcDate.get(mapKey);
+
+      if (group) {
         if (group.giris.length > 0) {
-          const girisRow = group.giris[0]; // Take the first giriş
-          const girisSaatValue = saatColIdx !== -1 ? girisRow[saatColIdx] : (islemColIdx !== -1 && girisRow[islemColIdx] !== girisRow[tarihColIdx] ? girisRow[islemColIdx] : "N/A");
-          const parsedGirisSaat = parseTurkishDate(girisSaatValue);
-          girisSaatStr = parsedGirisSaat ? formatDateToHHMMSS(parsedGirisSaat) : (typeof girisSaatValue === 'string' && girisSaatValue.match(/\d{1,2}:\d{2}/) ? girisSaatValue : "N/A");
+          // Sort giriş by time to get the earliest, if multiple exists
+          group.giris.sort((a, b) => {
+            const timeA = extractTimeFromRow(a, saatColIdx, islemColIdx, tarihColIdx);
+            const timeB = extractTimeFromRow(b, saatColIdx, islemColIdx, tarihColIdx);
+            return timeA.localeCompare(timeB);
+          });
+          ilgiliGirisSaati = extractTimeFromRow(group.giris[0], saatColIdx, islemColIdx, tarihColIdx);
         }
-
-        let cikisSaatStr = "";
         if (group.cikis.length > 0) {
-          const cikisRow = group.cikis[0]; // Take the first çıkış
-          const cikisSaatValue = saatColIdx !== -1 ? cikisRow[saatColIdx] : (islemColIdx !== -1 && cikisRow[islemColIdx] !== cikisRow[tarihColIdx] ? cikisRow[islemColIdx] : "N/A");
-          const parsedCikisSaat = parseTurkishDate(cikisSaatValue);
-          cikisSaatStr = parsedCikisSaat ? formatDateToHHMMSS(parsedCikisSaat) : (typeof cikisSaatValue === 'string' && cikisSaatValue.match(/\d{1,2}:\d{2}/) ? cikisSaatValue : "N/A");
+           // Sort çıkış by time to get the earliest
+          group.cikis.sort((a, b) => {
+            const timeA = extractTimeFromRow(a, saatColIdx, islemColIdx, tarihColIdx);
+            const timeB = extractTimeFromRow(b, saatColIdx, islemColIdx, tarihColIdx);
+            return timeA.localeCompare(timeB);
+          });
+          ilgiliCikisSaati = extractTimeFromRow(group.cikis[0], saatColIdx, islemColIdx, tarihColIdx);
         }
-        
-        // Only add if there's a silme operation for this TC/Date
-        analysisRows.push([
-          tc,
-          adSoyad,
-          formattedSilmeDate,
-          girisSaatStr,
-          cikisSaatStr,
-          formattedSilmeSaat,
-          silmeIslemDetayi
-        ]);
-      });
+      }
     }
+    processedRows.push([...originalRow, ilgiliGirisSaati, ilgiliCikisSaati, silmeKaydiSaati, silmeKaydiAciklamasi]);
   }
   
-  // Sort results by TC then Date for consistent output
-  analysisRows.sort((a, b) => {
-    const tcComp = String(a[0]).localeCompare(String(b[0]), 'tr-TR');
-    if (tcComp !== 0) return tcComp;
-    
-    // Dates are at index 2, in dd.MM.yyyy. Convert back for sorting or sort as string.
-    // For simplicity, string sort should be mostly fine if format is consistent.
-    // A more robust sort would re-parse to Date objects.
-    const dateA = parseTurkishDate(a[2]);
-    const dateB = parseTurkishDate(b[2]);
-
-    if (dateA && dateB) {
-      if (dateA < dateB) return -1;
-      if (dateA > dateB) return 1;
-      return 0;
-    } else if (dateA) {
-      return -1; // dateA is valid, dateB is not
-    } else if (dateB) {
-      return 1; // dateB is valid, dateA is not
-    }
-    return String(a[2]).localeCompare(String(b[2])); // Fallback to string compare
-  });
-
-
-  return { headers: outputHeaders, rows: analysisRows };
+  // No specific sorting needed here as original order is preserved. Sorting is done during initial merge.
+  return { headers: augmentedHeaders, rows: processedRows };
 }
