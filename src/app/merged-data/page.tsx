@@ -6,47 +6,69 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { MergedDataTable } from '@/components/MergedDataTable';
 import type { MergedExcelData } from '@/lib/excel-utils';
-import { Loader2, PlusCircle, Info, Home, ArrowLeft } from 'lucide-react';
+import { Loader2, PlusCircle, Info, Home, ArrowLeft, FileSearch2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { extractDeletionRelatedRecords } from '@/lib/analysis-utils'; // Import the new utility
 
 export default function MergedDataPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [mergedData, setMergedData] = useState<MergedExcelData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     const rawData = localStorage.getItem('mergedExcelData');
     if (rawData) {
       try {
         const parsedData: MergedExcelData = JSON.parse(rawData);
-        // Basic validation for the structure
         if (parsedData && Array.isArray(parsedData.headers) && Array.isArray(parsedData.rows)) {
-         setMergedData(parsedData); // Data is already sorted by TC Kimlik No from processAndMergeFiles
+         setMergedData(parsedData);
         } else {
          toast({ variant: "destructive", title: "Hata", description: "Saklanan birleştirilmiş veriler bozuk veya geçersiz formatta." });
-         localStorage.removeItem('mergedExcelData'); // Clean up corrupted data
+         localStorage.removeItem('mergedExcelData');
         }
       } catch (error) {
         console.error("Error parsing merged data from localStorage:", error);
-        toast({ variant: "destructive", title: "Veri Yükleme Hatası", description: "Saklanan veriler okunurken bir sorun oluştu. Veri formatı bozuk olabilir." });
-        localStorage.removeItem('mergedExcelData'); // Clean up corrupted data
+        toast({ variant: "destructive", title: "Veri Yükleme Hatası", description: "Saklanan veriler okunurken bir sorun oluştu." });
+        localStorage.removeItem('mergedExcelData');
       }
     }
     setIsLoading(false);
   }, [toast]);
 
   const handleNewMerge = () => {
-    // Optionally clear localStorage here if "Yeni Birleştirme" should always start fresh,
-    // but typically users might want to go back to the upload page without losing current view.
-    // localStorage.removeItem('mergedExcelData'); 
     router.push('/');
+  };
+
+  const handleAnalyzeDeletions = () => {
+    if (!mergedData) {
+      toast({ variant: "warning", title: "Veri Yok", description: "Analiz edilecek birleştirilmiş veri bulunmuyor." });
+      return;
+    }
+    setIsAnalyzing(true);
+    try {
+      const analysisResult = extractDeletionRelatedRecords(mergedData);
+      if (analysisResult.rows.length === 0 && analysisResult.headers.length > 0 && analysisResult.headers[0] !== "Hata") {
+         toast({ variant: "default", title: "Analiz Tamamlandı", description: "İlişkili silme kaydı bulunamadı." });
+      } else if (analysisResult.headers[0] === "Hata") {
+         toast({ variant: "destructive", title: "Analiz Hatası", description: analysisResult.rows[0][0] });
+      } else {
+        toast({ variant: "default", title: "Analiz Başarılı", description: `${analysisResult.rows.length} ilişkili kayıt bulundu.` });
+      }
+      localStorage.setItem('deletionAnalysisData', JSON.stringify(analysisResult));
+      router.push('/deletion-analysis');
+    } catch (error) {
+      console.error("Error during deletion analysis:", error);
+      toast({ variant: "destructive", title: "Analiz Sırasında Hata", description: `Bir hata oluştu: ${error instanceof Error ? error.message : String(error)}` });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-muted/30">
-      {/* Header Bar */}
       <header className="sticky top-0 z-30 w-full bg-card shadow-md">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <h1 className="text-xl font-semibold text-primary flex items-center">
@@ -54,6 +76,15 @@ export default function MergedDataPage() {
             Birleştirilmiş Veri Sonuçları
           </h1>
           <div className="flex items-center gap-3">
+            <Button 
+              onClick={handleAnalyzeDeletions} 
+              variant="outline" 
+              className="text-primary border-primary hover:bg-primary/10"
+              disabled={isAnalyzing || isLoading || !mergedData}
+            >
+              {isAnalyzing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FileSearch2 className="mr-2 h-5 w-5" />}
+              Silme Kayıtlarını Çıkart
+            </Button>
             <Button onClick={handleNewMerge} variant="outline" className="text-primary border-primary hover:bg-primary/10">
               <PlusCircle className="mr-2 h-5 w-5" />
               Yeni Birleştirme
@@ -65,8 +96,7 @@ export default function MergedDataPage() {
         </div>
       </header>
 
-      {/* Content Area */}
-      <main className="flex-grow w-full py-6"> {/* Removed container, mx-auto and px classes for full width */}
+      <main className="flex-grow w-full py-6">
         {isLoading && (
           <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-8 mt-10">
             <Loader2 className="h-16 w-16 animate-spin mb-4" />
@@ -76,12 +106,11 @@ export default function MergedDataPage() {
         )}
 
         {!isLoading && mergedData && (mergedData.headers.length > 0 || mergedData.rows.length > 0) && (
-          // MergedDataTable component will now handle its own Card styling and occupy full width
           <MergedDataTable data={mergedData} />
         )}
         
         {!isLoading && (!mergedData || (mergedData.headers.length === 0 && mergedData.rows.length === 0)) && (
-          <div className="flex-grow flex flex-col items-center justify-center mt-10 px-4"> {/* Added px-4 for padding on small screens for this card */}
+          <div className="flex-grow flex flex-col items-center justify-center mt-10 px-4">
             <Card className="w-full max-w-lg shadow-xl rounded-lg">
               <CardHeader className="text-center">
                   <Info className="h-16 w-16 text-primary mx-auto mb-5" />
