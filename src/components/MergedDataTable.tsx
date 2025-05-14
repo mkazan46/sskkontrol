@@ -105,77 +105,89 @@ export function MergedDataTable({ data }: MergedDataTableProps) {
       return String(cellValue);
     }
     
+    const isDateColumn = DATE_HEADERS_TR.includes(normalizedHeaderText);
+    const isTimeColumn = TIME_HEADERS_TR.includes(normalizedHeaderText);
+
     // Handle pre-parsed Date objects (e.g., from cellDates: true)
     if (cellValue instanceof Date && isValid(cellValue)) {
-      if (DATE_HEADERS_TR.includes(normalizedHeaderText)) {
+      if (isDateColumn && !isTimeColumn) { // Exclusively a date column
         return format(cellValue, 'dd.MM.yyyy', { locale: tr });
       }
-      if (TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-         // Check if it's a date object that only contains time (date part is epoch or similar)
-        if (cellValue.getFullYear() === 1970 || cellValue.getFullYear() === 1899) { // Common epoch start for time-only
-            return format(cellValue, 'HH:mm:ss');
-        }
-        return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr }); // Full date-time if not just time
+      if (isTimeColumn && !isDateColumn) { // Exclusively a time column
+        return format(cellValue, 'HH:mm:ss');
       }
-      return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr }); // Default for other Date objects
+      if (isDateColumn && isTimeColumn) { // Column is marked as both (e.g. "kayıt zamanı")
+        return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
+      }
+      // Default for Date objects not in specified headers:
+      // Guess based on content: if time is midnight, format as date only.
+      if (cellValue.getHours() === 0 && cellValue.getMinutes() === 0 && cellValue.getSeconds() === 0 && cellValue.getMilliseconds() === 0) {
+        return format(cellValue, 'dd.MM.yyyy', { locale: tr });
+      }
+      // Otherwise, format as full date-time as a sensible default
+      return format(cellValue, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
     }
 
     // Handle strings that might be dates or times
     if (typeof cellValue === 'string') {
       const trimmedValue = cellValue.trim();
-      if (DATE_HEADERS_TR.includes(normalizedHeaderText) || TIME_HEADERS_TR.includes(normalizedHeaderText)) {
+      if (isDateColumn || isTimeColumn) { // Only attempt parsing if in a date/time column
         const parsedDate = parseTurkishDate(trimmedValue);
         if (parsedDate && isValid(parsedDate)) {
-          if (DATE_HEADERS_TR.includes(normalizedHeaderText) && !TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-            // If it's primarily a date column, format as date only.
+          if (isDateColumn && !isTimeColumn) { // Exclusively a date column
              return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
           }
-          if (TIME_HEADERS_TR.includes(normalizedHeaderText) && !DATE_HEADERS_TR.includes(normalizedHeaderText)) {
-            // If it's primarily a time column, format as time only.
+          if (isTimeColumn && !isDateColumn) { // Exclusively a time column
             return format(parsedDate, 'HH:mm:ss');
           }
-          // If it could be both or is ambiguous, format as full date-time
+          // If it could be both (e.g. header is in both lists, or logic leads here)
           return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
         }
       }
-      // Return original string if not a parsable date/time or not in a date/time column.
-      // This ensures Turkish characters in regular strings are preserved.
-      return trimmedValue;
+      return trimmedValue; // original string if not a parsable date/time or not in date/time column
     }
     
-    // Handle numbers (could be Excel date serials if cellDates:false, or just numbers)
+    // Handle numbers (could be Excel date serials if cellDates:false, or if cellDates:true failed)
     if (typeof cellValue === 'number') {
-      if (DATE_HEADERS_TR.includes(normalizedHeaderText) || TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-        // Attempt to convert Excel serial date number to Date object
-        // Excel for Windows serial date base: 30th December 1899
-        // Excel for Mac serial date base: 1st January 1904
-        // This simple conversion assumes Windows base and doesn't handle Mac 1904 base or leap year bug.
-        // For robust Excel date number conversion, XLSX.SSF.parse_date_code(cellValue) is better if available directly.
-        if (cellValue > 1 && cellValue < 2958466) { // Plausible range for Excel dates
+      if (isDateColumn || isTimeColumn) { // Only attempt conversion if it's a date/time column
+         // Plausible range for Excel dates. Excel time-only values are < 1.
+        if (cellValue > 0 && cellValue < 2958466) {
             try {
+                // This is the existing simplified conversion from the codebase.
+                // It assumes Windows Excel 1900 date system and attempts a local time conversion.
+                // `cellDates: true` in `excel-utils.ts` is the primary mechanism for date conversion.
+                // This numeric conversion is a fallback.
                 const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
                 const dateObj = new Date(excelEpoch.getTime() + (cellValue -1) * 24 * 60 * 60 * 1000);
-                 // Adjust for timezone offset if numbers represent UTC dates but should be shown in local time
-                dateObj.setTime(dateObj.getTime() + dateObj.getTimezoneOffset() * 60 * 1000);
+                // The following line attempts to adjust for timezone, assuming the calculated dateObj is UTC.
+                // This can be problematic. date-fns `format` handles localization from a JS Date object well.
+                // For simplicity, we'll keep the existing numeric conversion logic structure but apply consistent formatting.
+                // To be more robust, one would ideally use a proper Excel SSF parser or rely solely on `cellDates: true`.
+                const finalDateObj = new Date(dateObj.getTime() + dateObj.getTimezoneOffset() * 60 * 1000);
 
-                if (isValid(dateObj)) {
-                    if (DATE_HEADERS_TR.includes(normalizedHeaderText) && !TIME_HEADERS_TR.includes(normalizedHeaderText)) {
-                        return format(dateObj, 'dd.MM.yyyy', { locale: tr });
+
+                if (isValid(finalDateObj)) { // Use finalDateObj after timezone adjustment attempt
+                    if (isDateColumn && !isTimeColumn) {
+                        return format(finalDateObj, 'dd.MM.yyyy', { locale: tr });
                     }
-                    if (TIME_HEADERS_TR.includes(normalizedHeaderText) && !DATE_HEADERS_TR.includes(normalizedHeaderText)) {
-                        // If it's a time column and the number is < 1, it's likely just time.
+                    if (isTimeColumn && !isDateColumn) {
+                        // If the original number was < 1, it's likely just time.
                         // Otherwise, it might be a full date being shown in a time column.
-                        if (cellValue > 0 && cellValue < 1) return format(dateObj, 'HH:mm:ss');
-                         // For full dates in time columns, you might choose to show full or just time.
-                        return format(dateObj, 'HH:mm:ss'); // Default to time for time column
+                        return format(finalDateObj, 'HH:mm:ss');
                     }
-                    return format(dateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
+                    if (isDateColumn && isTimeColumn) { // Column is marked as both
+                        return format(finalDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
+                    }
+                     // Fallback for numeric dates in ambiguously typed columns or if not fitting above
+                    if (cellValue > 0 && cellValue < 1) { // Excel time is a fraction of a day
+                        return format(finalDateObj, 'HH:mm:ss');
+                    }
+                    return format(finalDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
                 }
             } catch (e) { /* Fall through to string conversion */ }
         }
       }
-      // For non-date numbers, format with Turkish locale for number formatting (e.g., decimal points)
-      return cellValue.toLocaleString('tr-TR');
+      return cellValue.toLocaleString('tr-TR'); // For non-date numbers or if conversion failed
     }
 
     // Fallback for other types (boolean, etc.)
