@@ -2,7 +2,7 @@
 'use client';
 
 import type { MergedExcelData } from './excel-utils';
-import { parseTurkishDate, formatDateToHHMMSS, getFormattedEventDateTime } from './date-utils'; // Removed DATE_HEADERS_TR_FORMATTING, TIME_HEADERS_TR_FORMATTING as they are used internally by date-utils
+import { parseTurkishDate, formatDateToHHMMSS } from './date-utils'; // Removed DATE_HEADERS_TR_FORMATTING, TIME_HEADERS_TR_FORMATTING as they are used internally by date-utils
 import { format, isValid } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
@@ -28,6 +28,7 @@ interface MappedRecordEntry {
   originalIndex: number; 
   eventTime: string; 
   islemTuru: string;
+  // rawSaatValue: any; // Store the original saat value for potential re-use or formatting
 }
 
 
@@ -56,6 +57,8 @@ function extractTimeFromRow(row: any[], saatColIdx: number, islemColIdx: number,
         if (match && match[1]) {
           timeValue = match[1]; 
         } else if (groupingDateColIdx !== -1 && row[groupingDateColIdx] !== row[islemColIdx]) {
+           // If 'saat' is missing/same as date, and no time pattern in 'islem',
+           // and 'islem' is different from 'tarih', then 'islem' itself might be a time or datetime string
            timeValue = row[islemColIdx];
         }
       }
@@ -112,11 +115,31 @@ export async function extractDeletionRelatedRecords(mergedData: MergedExcelData)
   const workingRows = originalRows.map(row => {
     const newRow = [...row];
     if (newRow.length < finalHeaders.length) {
-      newRow.length = finalHeaders.length;
-      newRow.fill("", row.length);
+      newRow.length = finalHeaders.length; // Ensure newRow is long enough for marker columns
+      newRow.fill("", row.length); // Fill any new cells with empty string
     }
     return newRow;
   });
+
+  // Helper function locally defined
+  function getFormattedEventDateTime(row: any[], groupingDateColIdx: number, eventSaatColIdx: number, islemColIdx: number): string {
+    const groupingDateValue = row[groupingDateColIdx];
+    const parsedGroupingDate = parseTurkishDate(groupingDateValue);
+    if (!parsedGroupingDate || !isValid(parsedGroupingDate)) return "";
+
+    const timeStr = extractTimeFromRow(row, eventSaatColIdx, islemColIdx, groupingDateColIdx);
+    if (!timeStr) return format(parsedGroupingDate, 'yyyy-MM-dd HH:mm:ss'); // Return date with 00:00:00 if no time
+
+    const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+    
+    const eventDateTime = new Date(parsedGroupingDate);
+    eventDateTime.setHours(hours || 0, minutes || 0, seconds || 0, 0);
+    
+    if (!isValid(eventDateTime)) return format(parsedGroupingDate, 'yyyy-MM-dd HH:mm:ss'); // Fallback if constructed date is invalid
+
+    return format(eventDateTime, 'yyyy-MM-dd HH:mm:ss');
+  }
+
 
   const recordsByTcDate = new Map<string, { giris: MappedRecordEntry[] }>(); 
   
@@ -179,20 +202,24 @@ export async function extractDeletionRelatedRecords(mergedData: MergedExcelData)
         for (const girisEntry of group.giris) {
           const ilgiliGirisRowFromWorkingRows = workingRows[girisEntry.originalIndex];
 
+          // Check if the 'Giris' row has NOT been consumed by another 'Silme' operation yet
           if (ilgiliGirisRowFromWorkingRows && ilgiliGirisRowFromWorkingRows[consumedMarkerColIdx] !== CONSUMED_BY_ANALYSIS_MARKER_VALUE) {
             // const girisIslemTuru = String(ilgiliGirisRowFromWorkingRows[islemColIdx] || '').trim();
-            const girisIslemTuru = girisEntry.islemTuru;
+            const girisIslemTuru = girisEntry.islemTuru; // Use the islemTuru stored during grouping
             
+            // Update the 'Silme' row's 'İşlem' column
             rowToProcess[islemColIdx] = `${girisIslemTuru} / ${currentIslem}`;
             
+            // Update the 'Silme' row's 'Saat' column with the 'Giriş' event's time
             const girisEventTimeStr = extractTimeFromRow(ilgiliGirisRowFromWorkingRows, eventSaatColIdx, islemColIdx, groupingDateColIdx);
             
             if (eventSaatColIdx !== -1) {
-              rowToProcess[eventSaatColIdx] = girisEventTimeStr;
+              rowToProcess[eventSaatColIdx] = girisEventTimeStr; // Update the dedicated 'Saat' column if it exists
             }
             
+            // Mark the 'Giris' row as consumed
             ilgiliGirisRowFromWorkingRows[consumedMarkerColIdx] = CONSUMED_BY_ANALYSIS_MARKER_VALUE;
-            break; 
+            break; // Stop after consuming the first available 'Giris' record for this 'Silme'
           }
         }
       }
@@ -204,3 +231,4 @@ export async function extractDeletionRelatedRecords(mergedData: MergedExcelData)
   
   return { headers: finalHeaders, rows: workingRows };
 }
+
