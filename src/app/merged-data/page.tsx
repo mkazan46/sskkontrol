@@ -44,7 +44,7 @@ export default function MergedDataPage() {
     router.push('/');
   };
 
-  const handleAnalyzeDeletions = () => {
+  const handleAnalyzeDeletions = async () => {
     if (!mergedData) {
       toast({ variant: "warning", title: "Veri Yok", description: "Analiz edilecek birleştirilmiş veri bulunmuyor." });
       return;
@@ -52,14 +52,13 @@ export default function MergedDataPage() {
     setIsAnalyzing(true);
     setAnalysisApplied(false); // Reset before new analysis
     try {
-      const analysisResult = extractDeletionRelatedRecords(mergedData);
+      // Use await here as extractDeletionRelatedRecords is now async
+      const analysisResult = await extractDeletionRelatedRecords(mergedData); 
       
-      // Check if the result contains an error header added by the analysis function
       const errorHeaderIndex = analysisResult.headers.indexOf("Analiz Hatası");
       if (errorHeaderIndex !== -1) {
          toast({ variant: "destructive", title: "Analiz Hatası", description: analysisResult.rows.length > 0 ? analysisResult.rows[0][errorHeaderIndex] : "Gerekli sütunlar bulunamadı veya analiz sırasında bir sorun oluştu." });
       } else {
-        // Check if any row was actually marked by the analysis
         const markerHeaderIndex = analysisResult.headers.indexOf("__isAnalyzedDeletion");
         const silmeAnalysisPerformed = markerHeaderIndex !== -1 && analysisResult.rows.some(row => row[markerHeaderIndex] === "ANALYZED_DELETION_ROW_MARKER");
 
@@ -69,7 +68,7 @@ export default function MergedDataPage() {
         } else {
             toast({ variant: "default", title: "Analiz Tamamlandı", description: "İlişkilendirilecek veya işlenecek aktif silme kaydı bulunamadı." });
         }
-        setMergedData(analysisResult); // Update table with potentially modified data and markers
+        setMergedData(analysisResult); 
       }
     } catch (error) {
       console.error("Error during deletion analysis:", error);
@@ -99,7 +98,7 @@ export default function MergedDataPage() {
         </div>
       </header>
 
-      <main className="flex-grow w-full py-6 px-0 sm:px-0 lg:px-0 flex flex-col"> {/* Added flex flex-col */}
+      <main className="flex-grow w-full py-6 px-0 sm:px-0 lg:px-0 flex flex-col"> 
         {isLoading && (
           <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-8 mt-10">
             <Loader2 className="h-16 w-16 animate-spin mb-4" />

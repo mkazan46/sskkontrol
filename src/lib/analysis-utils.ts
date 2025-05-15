@@ -2,21 +2,20 @@
 'use client';
 
 import type { MergedExcelData } from './excel-utils';
-import { parseTurkishDate, formatDateToHHMMSS, DATE_HEADERS_TR_FORMATTING, TIME_HEADERS_TR_FORMATTING } from './date-utils';
+import { parseTurkishDate, formatDateToHHMMSS, getFormattedEventDateTime } from './date-utils'; // Removed DATE_HEADERS_TR_FORMATTING, TIME_HEADERS_TR_FORMATTING as they are used internally by date-utils
 import { format, isValid } from 'date-fns';
 import { tr } from 'date-fns/locale';
 
 // Constants for column header matching (all lowercase for case-insensitive comparison)
 const TC_KIMLIK_NO_HEADERS_ANALYSIS = ["tc kimlik no", "tckn", "kimlik no", "tc no", "tc", "vatandaşlık no", "t.c. kimlik no", "t.c kimlik no", "t.c. no", "tc kimlik numarası"];
-const AD_SOYAD_HEADERS_ANALYSIS = ["ad soyad", "adı soyadı", "isim soyisim", "adsoyad", "isim", "personel", "çalışan"];
-const TARIH_HEADERS_ANALYSIS = ["tarih", "işlem tarihi", "kayıt tarihi", "gün"]; // Used for grouping
+const TARIH_HEADERS_ANALYSIS = ["tarih", "işlem tarihi", "kayıt tarihi", "gün"]; 
 const ISLEM_HEADERS_ANALYSIS = ["işlem", "açıklama", "işlem türü", "olay", "hareket tipi"];
-const SAAT_HEADERS_ANALYSIS = ["saat", "işlem saati", "zaman", "giriş saati", "çıkış saati"]; // Used for event time
+const SAAT_HEADERS_ANALYSIS = ["saat", "işlem saati", "zaman", "giriş saati", "çıkış saati"]; 
 
 const ISLEM_TYPES = {
   SILME: "silme",
   GIRIS: "giriş",
-  CIKIS: "çıkış", // Currently not used for consumption logic but defined
+  CIKIS: "çıkış", 
   KAYIT: "kayıt",
 };
 
@@ -26,9 +25,9 @@ const CONSUMED_BY_ANALYSIS_MARKER_HEADER = "__isConsumedByAnalysis";
 const CONSUMED_BY_ANALYSIS_MARKER_VALUE = "CONSUMED_BY_ANALYSIS_ROW_MARKER";
 
 interface MappedRecordEntry {
-  // rowArray: any[]; // Reference to the row in workingRows - not needed if we use originalIndex
-  originalIndex: number; // The index of this row in the workingRows array
-  eventTime: string; // Formatted time string for sorting "HH:mm:ss" or full "dd.MM.yyyy HH:mm:ss"
+  originalIndex: number; 
+  eventTime: string; 
+  islemTuru: string;
 }
 
 
@@ -48,65 +47,26 @@ function findColumnIndex(headers: string[], targetHeaders: string[], headerOrigi
 function extractTimeFromRow(row: any[], saatColIdx: number, islemColIdx: number, groupingDateColIdx: number): string {
     let timeValue = saatColIdx !== -1 ? row[saatColIdx] : null;
     
-    // If Saat column is empty, not present, or contains the same value as the grouping date (common if date is in time field)
-    // try extracting from İşlem column.
     if (saatColIdx === -1 || timeValue === null || String(timeValue).trim() === "" || 
         (groupingDateColIdx !== -1 && String(row[groupingDateColIdx]) === String(timeValue))) {
       if (islemColIdx !== -1 && row[islemColIdx] !== null && String(row[islemColIdx]).trim() !== "") {
         const islemContent = String(row[islemColIdx]);
-        const timePattern = /\b(\d{1,2}:\d{2}(:\d{2})?)\b/; // Matches HH:MM or HH:MM:SS
+        const timePattern = /\b(\d{1,2}:\d{2}(:\d{2})?)\b/; 
         const match = islemContent.match(timePattern);
         if (match && match[1]) {
-          timeValue = match[1]; // Use time found in işlem description
+          timeValue = match[1]; 
         } else if (groupingDateColIdx !== -1 && row[groupingDateColIdx] !== row[islemColIdx]) {
-           // Fallback: if no time pattern but işlem content is different from date, consider it as time value
            timeValue = row[islemColIdx];
         }
       }
     }
 
-    const parsedTime = parseTurkishDate(timeValue); // Handles various date/time string formats
+    const parsedTime = parseTurkishDate(timeValue); 
     return parsedTime && isValid(parsedTime) ? formatDateToHHMMSS(parsedTime) : (typeof timeValue === 'string' && timeValue.match(/\d{1,2}:\d{2}/) ? timeValue : "");
 }
 
-// Gets a full date-time string for an event, using grouping date and specific time from row.
-function getFormattedEventDateTime(row: any[], groupingDateColIdx: number, eventSpecificSaatColIdx: number, eventSpecificIslemColIdx: number): string {
-  let eventDateObj: Date | null = null;
-  
-  // Try to parse time from the dedicated "Saat" column first
-  if (eventSpecificSaatColIdx !== -1 && row[eventSpecificSaatColIdx] !== null && String(row[eventSpecificSaatColIdx]).trim() !== "") {
-    eventDateObj = parseTurkishDate(row[eventSpecificSaatColIdx]);
-  }
 
-  // If "Saat" column didn't yield a valid date, try "İşlem" column
-  if ((!eventDateObj || !isValid(eventDateObj)) && eventSpecificIslemColIdx !== -1 && row[eventSpecificIslemColIdx] !== null && String(row[eventSpecificIslemColIdx]).trim() !== "") {
-      eventDateObj = parseTurkishDate(row[eventSpecificIslemColIdx]);
-  }
-
-  // If still no valid date object, try to combine groupingDate with extracted time
-  if (!eventDateObj || !isValid(eventDateObj)) {
-    const groupingDate = groupingDateColIdx !== -1 ? parseTurkishDate(row[groupingDateColIdx]) : null;
-    if (groupingDate && isValid(groupingDate)) {
-      const timeStr = extractTimeFromRow(row, eventSpecificSaatColIdx, eventSpecificIslemColIdx, groupingDateColIdx);
-      if (timeStr) {
-        const [hours, minutes, seconds] = timeStr.split(':').map(Number);
-        if (hours !== undefined && minutes !== undefined) {
-          const combinedDate = new Date(groupingDate); // Clone to avoid modifying original
-          combinedDate.setHours(hours, minutes, seconds || 0, 0);
-          eventDateObj = combinedDate;
-        }
-      } else {
-         // If no specific time, use the grouping date as is (time will be 00:00:00)
-         eventDateObj = groupingDate;
-      }
-    }
-  }
-  
-  return eventDateObj && isValid(eventDateObj) ? format(eventDateObj, 'dd.MM.yyyy HH:mm:ss', { locale: tr }) : "";
-}
-
-
-export function extractDeletionRelatedRecords(mergedData: MergedExcelData): MergedExcelData {
+export async function extractDeletionRelatedRecords(mergedData: MergedExcelData): Promise<MergedExcelData> {
   if (!mergedData || mergedData.rows.length === 0) {
     return { headers: [], rows: [] };
   }
@@ -158,15 +118,17 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
     return newRow;
   });
 
-  const recordsByTcDate = new Map<string, { giris: MappedRecordEntry[] }>(); // Only storing 'giris' for consumption
+  const recordsByTcDate = new Map<string, { giris: MappedRecordEntry[] }>(); 
   
-  workingRows.forEach((row, index) => {
+  for (let index = 0; index < workingRows.length; index++) {
+    const row = workingRows[index];
     const tc = String(row[tcColIdx] || '').trim();
     const dateValue = row[groupingDateColIdx];
     const islem = String(row[islemColIdx] || '').toLocaleLowerCase('tr-TR').trim();
+    const islemOriginalCase = String(row[islemColIdx] || '').trim();
     
     const parsedGroupingDate = parseTurkishDate(dateValue);
-    if (!tc || !parsedGroupingDate || !isValid(parsedGroupingDate)) return; 
+    if (!tc || !parsedGroupingDate || !isValid(parsedGroupingDate)) continue; 
 
     const dateKey = format(parsedGroupingDate, 'yyyy-MM-dd');
     const mapKey = `${tc}_${dateKey}`;
@@ -177,13 +139,23 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
         }
         const group = recordsByTcDate.get(mapKey)!;
         const eventDateTimeStr = getFormattedEventDateTime(row, groupingDateColIdx, eventSaatColIdx, islemColIdx);
-        group.giris.push({ originalIndex: index, eventTime: eventDateTimeStr });
+        group.giris.push({ originalIndex: index, eventTime: eventDateTimeStr, islemTuru: islemOriginalCase });
     }
-  });
+    if (index > 0 && index % 200 === 0) { // Yield every 200 rows
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+  
+  const groupKeys = Array.from(recordsByTcDate.keys());
+  for (let i = 0; i < groupKeys.length; i++) {
+      const key = groupKeys[i];
+      const group = recordsByTcDate.get(key)!;
+      group.giris.sort((a, b) => (a.eventTime || "").localeCompare(b.eventTime || ""));
+      if (i > 0 && i % 100 === 0) { // Yield every 100 groups sorted
+           await new Promise(resolve => setTimeout(resolve, 0));
+      }
+  }
 
-  recordsByTcDate.forEach(group => {
-    group.giris.sort((a, b) => (a.eventTime || "").localeCompare(b.eventTime || ""));
-  });
 
   for (let i = 0; i < workingRows.length; i++) {
     const rowToProcess = workingRows[i];
@@ -208,7 +180,8 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
           const ilgiliGirisRowFromWorkingRows = workingRows[girisEntry.originalIndex];
 
           if (ilgiliGirisRowFromWorkingRows && ilgiliGirisRowFromWorkingRows[consumedMarkerColIdx] !== CONSUMED_BY_ANALYSIS_MARKER_VALUE) {
-            const girisIslemTuru = String(ilgiliGirisRowFromWorkingRows[islemColIdx] || '').trim();
+            // const girisIslemTuru = String(ilgiliGirisRowFromWorkingRows[islemColIdx] || '').trim();
+            const girisIslemTuru = girisEntry.islemTuru;
             
             rowToProcess[islemColIdx] = `${girisIslemTuru} / ${currentIslem}`;
             
@@ -224,9 +197,10 @@ export function extractDeletionRelatedRecords(mergedData: MergedExcelData): Merg
         }
       }
     }
+    if (i > 0 && i % 200 === 0) { // Yield every 200 rows
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
   }
   
   return { headers: finalHeaders, rows: workingRows };
 }
-
-    
