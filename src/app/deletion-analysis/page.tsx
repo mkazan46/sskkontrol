@@ -9,6 +9,7 @@ import type { MergedExcelData } from '@/lib/excel-utils';
 import { Loader2, PlusCircle, Info, Home, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ANALYSIS_HIGHLIGHT_MARKER_HEADER } from '@/lib/analysis-utils';
 
 export default function DeletionAnalysisPage() {
   const router = useRouter();
@@ -17,20 +18,21 @@ export default function DeletionAnalysisPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const rawData = localStorage.getItem('deletionAnalysisResults');
+    const rawData = localStorage.getItem('deletionAnalysisFullResults');
     if (rawData) {
       try {
         const parsedData: MergedExcelData = JSON.parse(rawData);
         if (parsedData && Array.isArray(parsedData.headers) && Array.isArray(parsedData.rows)) {
          setAnalysisData(parsedData);
+         toast({variant: "default", title:"Analiz Yüklendi", description: "İşlenmiş silme kayıtları vurgulanmıştır."})
         } else {
          toast({ variant: "destructive", title: "Hata", description: "Saklanan analiz verileri bozuk veya geçersiz formatta." });
-         localStorage.removeItem('deletionAnalysisResults'); 
+         localStorage.removeItem('deletionAnalysisFullResults'); 
         }
       } catch (error) {
         console.error("Error parsing analysis data from localStorage:", error);
         toast({ variant: "destructive", title: "Veri Yükleme Hatası", description: "Saklanan analiz verileri okunurken bir sorun oluştu." });
-        localStorage.removeItem('deletionAnalysisResults');
+        localStorage.removeItem('deletionAnalysisFullResults');
       }
     } else {
         toast({ variant: "warning", title: "Veri Yok", description: "Görüntülenecek analiz verisi bulunamadı. Lütfen birleştirme sayfasından analizi tekrar başlatın." });
@@ -40,7 +42,7 @@ export default function DeletionAnalysisPage() {
 
   const handleNewMerge = () => {
     localStorage.removeItem('mergedExcelData'); 
-    localStorage.removeItem('deletionAnalysisResults');
+    localStorage.removeItem('deletionAnalysisFullResults');
     router.push('/');
   };
   
@@ -50,7 +52,7 @@ export default function DeletionAnalysisPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <h1 className="text-xl font-semibold text-primary flex items-center">
             <ArrowLeft className="mr-2 h-5 w-5 cursor-pointer hover:text-primary/80" onClick={() => router.push('/merged-data')} title="Birleştirilmiş Verilere Dön"/>
-            Silme Kayıt Analizi Sonuçları
+            Silme Kayıt Analizi (Vurgulanmış)
           </h1>
           <div className="flex items-center gap-3">
             <Button onClick={handleNewMerge} variant="outline" className="text-primary border-primary hover:bg-primary/10">
@@ -75,8 +77,8 @@ export default function DeletionAnalysisPage() {
 
         {!isLoading && analysisData && (analysisData.headers.length > 0 || analysisData.rows.length > 0) && (
           <MergedDataTable 
-            data={analysisData} 
-            // onAnalyzeDeletions prop is not passed here as this page only displays results
+            data={analysisData}
+            highlightMarkerHeader={ANALYSIS_HIGHLIGHT_MARKER_HEADER} // Pass the marker header
           />
         )}
         
@@ -114,3 +116,5 @@ export default function DeletionAnalysisPage() {
     </div>
   );
 }
+
+    

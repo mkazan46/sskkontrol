@@ -22,11 +22,12 @@ import { cn } from '@/lib/utils';
 
 interface MergedDataTableProps {
   data: MergedExcelData | null;
-  onAnalyzeDeletions?: () => void; // To trigger analysis and navigation
-  isAnalyzing?: boolean; // To disable button during analysis
+  onAnalyzeDeletions?: () => void; 
+  isAnalyzing?: boolean;
+  highlightMarkerHeader?: string; // Optional prop to specify the header for highlighting
 }
 
-export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: MergedDataTableProps) {
+export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlightMarkerHeader }: MergedDataTableProps) {
   if (!data) {
     return (
         <Card className="w-full mt-6 shadow-xl">
@@ -47,13 +48,11 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
   
   const hasSiraNo = data.headers[0]?.toLocaleLowerCase('tr-TR') === "sıra no";
   
-  // Removed marker logic as analysis is on a new page
-  const displayHeaders = hasSiraNo ? [...data.headers] : ["Sıra No", ...data.headers];
+  const markerColIndex = highlightMarkerHeader ? data.headers.indexOf(highlightMarkerHeader) : -1;
 
-  const displayRows = data.rows.map((row, index) => {
-    const baseRow = hasSiraNo ? [...row] : [index + 1, ...row];
-    return baseRow;
-  });
+  // Filter out the marker header from displayHeaders
+  const visibleHeaders = data.headers.filter(header => header !== highlightMarkerHeader);
+  const displayHeaders = hasSiraNo ? [...visibleHeaders] : ["Sıra No", ...visibleHeaders];
 
 
   const formatCellContent = (cellValue: any, headerText: string): string => {
@@ -73,17 +72,14 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
     const parsedDate = parseTurkishDate(cellValue); 
 
     if (parsedDate && isValid(parsedDate)) {
-      if (isTimeColumn && !isDateColumn) { // Explicitly time column
+      if (isTimeColumn && !isDateColumn) { 
         return format(parsedDate, 'HH:mm:ss');
       }
-      if (isDateColumn && !isTimeColumn) { // Explicitly date column
+      if (isDateColumn && !isTimeColumn) { 
         return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
       }
-      // If column could be both, or neither specifically, but is a valid date
-      // Check if time part is midnight, format as date only, otherwise full datetime
       if (parsedDate.getHours() === 0 && parsedDate.getMinutes() === 0 && parsedDate.getSeconds() === 0 && parsedDate.getMilliseconds() === 0) {
-        if (isDateColumn) return format(parsedDate, 'dd.MM.yyyy', { locale: tr }); // e.g. "İşlem Tarihi" which might be date only
-        // if (isTimeColumn) return format(parsedDate, 'HH:mm:ss'); // Unlikely to be midnight if it's a time column
+        if (isDateColumn) return format(parsedDate, 'dd.MM.yyyy', { locale: tr }); 
       }
       return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
     }
@@ -99,25 +95,26 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
 
   return (
     <Card className="w-full mt-6 shadow-xl rounded-lg overflow-hidden flex flex-col flex-grow">
-      <CardHeader className="border-b flex flex-row items-center justify-between p-4">
+      <CardHeader className="border-b flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-2">
         <div>
           <CardTitle className="flex items-center text-xl sm:text-2xl text-primary">
             <Table2 className="mr-2 sm:mr-3 h-6 w-6 sm:h-7 sm:w-7" />
-            {/* Conditional title based on whether onAnalyzeDeletions is provided */}
             {onAnalyzeDeletions ? "Birleştirilmiş Veri Listesi" : "Analiz Sonuçları"}
           </CardTitle>
-          <CardDescription className="text-xs sm:text-sm">
+          <CardDescription className="text-xs sm:text-sm mt-1">
             {onAnalyzeDeletions 
               ? "Yüklediğiniz dosyalardan birleştirilmiş ve ilgili sütun bulunduğunda TC Kimlik No'suna göre sıralanmış veriler."
-              : "Silme kayıtları ve ilişkili giriş/kayıt bilgileri."
+              : highlightMarkerHeader 
+                ? "Tüm kayıtlar listelenmiştir. Analiz edilen ve birleştirilen silme kayıtları kırmızı ile vurgulanmıştır."
+                : "İşlenmiş veri listesi."
             }
           </CardDescription>
         </div>
-        {onAnalyzeDeletions && ( // Only show button if handler is provided
+        {onAnalyzeDeletions && ( 
             <Button 
               onClick={onAnalyzeDeletions} 
               variant="outline" 
-              className="text-primary border-primary hover:bg-primary/10 whitespace-nowrap px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm"
+              className="text-primary border-primary hover:bg-primary/10 whitespace-nowrap px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm self-start sm:self-center"
               disabled={isAnalyzing || !data || data.rows.length === 0}
               size="sm"
             >
@@ -127,7 +124,7 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
         )}
       </CardHeader>
       <CardContent className="p-0 flex flex-col flex-grow"> 
-        {displayRows.length === 0 ? (
+        {data.rows.length === 0 ? ( 
           <div className="flex flex-col items-center justify-center h-64 text-muted-foreground flex-grow">
             <Info className="h-12 w-12 mb-4 text-primary/70" />
             <p className="text-lg">Görüntülenecek veri bulunmamaktadır.</p>
@@ -149,25 +146,46 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayRows.map((rowArray, rowIndex) => (
-                  <TableRow 
-                    key={rowIndex} 
-                    className="hover:bg-muted/30 even:bg-background/30 border-b last:border-b-0"
+                {data.rows.map((originalRow, rowIndex) => {
+                  const isHighlighted = markerColIndex !== -1 && originalRow[markerColIndex] === true;
+                  
+                  // Prepare row for display by filtering out marker column data
+                  let rowCellsForDisplay = [...originalRow];
+                  if (markerColIndex !== -1) {
+                    rowCellsForDisplay.splice(markerColIndex, 1);
+                  }
+                  if (hasSiraNo) {
+                    // rowCellsForDisplay already has Sıra No if it was in original data
+                  } else {
+                    rowCellsForDisplay = [rowIndex + 1, ...rowCellsForDisplay];
+                  }
+
+                  return (
+                    <TableRow 
+                      key={rowIndex} 
+                      className={cn(
+                        "hover:bg-muted/30 even:bg-background/30 border-b last:border-b-0",
+                        isHighlighted && "bg-red-100 dark:bg-red-900/40 hover:bg-red-200/80 dark:hover:bg-red-800/60"
+                      )}
                     >
-                    {displayHeaders.map((originalHeader, cellIndex) => {
-                      const cellData = rowArray[cellIndex];
-                      return (
-                        <TableCell 
-                          key={cellIndex} 
-                          className="text-foreground px-3 py-2 text-left text-sm break-words"
-                          title={formatCellContent(cellData, String(originalHeader))} 
-                        >
-                          {formatCellContent(cellData, String(originalHeader))}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))}
+                      {rowCellsForDisplay.map((cellData, cellIndex) => {
+                        const headerText = displayHeaders[cellIndex];
+                        return (
+                          <TableCell 
+                            key={cellIndex} 
+                            className={cn(
+                              "text-foreground px-3 py-2 text-left text-sm break-words",
+                              isHighlighted && "text-red-900 dark:text-red-100"
+                            )}
+                            title={formatCellContent(cellData, String(headerText))} 
+                          >
+                            {formatCellContent(cellData, String(headerText))}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             <ScrollBar orientation="horizontal" />
@@ -182,3 +200,5 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing }: Merge
     </Card>
   );
 }
+
+    

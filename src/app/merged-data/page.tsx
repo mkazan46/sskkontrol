@@ -9,14 +9,14 @@ import type { MergedExcelData } from '@/lib/excel-utils';
 import { Loader2, PlusCircle, Info, Home, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-// Removed: import { extractDeletionRelatedRecords } from '@/lib/analysis-utils'; 
+import { extractDeletionRelatedRecords } from '@/lib/analysis-utils'; 
 
 export default function MergedDataPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [mergedData, setMergedData] = useState<MergedExcelData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false); // Kept for button state
+  const [isAnalyzing, setIsAnalyzing] = useState(false); 
 
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export default function MergedDataPage() {
 
   const handleNewMerge = () => {
     localStorage.removeItem('mergedExcelData');
-    localStorage.removeItem('deletionAnalysisResults'); // Clear analysis results too
+    localStorage.removeItem('deletionAnalysisFullResults'); 
     router.push('/');
   };
 
@@ -54,17 +54,12 @@ export default function MergedDataPage() {
     toast({ variant: "default", title: "Analiz Başlatıldı", description: "Silme kayıtları analiz ediliyor, lütfen bekleyin..." });
     
     try {
-      // Dynamically import to ensure it's only loaded when needed client-side
-      const { extractDeletionRelatedRecords } = await import('@/lib/analysis-utils');
       const analysisResult = await extractDeletionRelatedRecords(mergedData); 
       
-      if (analysisResult.rows.length === 0) {
-        toast({ variant: "default", title: "Analiz Tamamlandı", description: "Analiz edilecek veya eşleştirilecek aktif silme kaydı bulunamadı." });
-      } else {
-        localStorage.setItem('deletionAnalysisResults', JSON.stringify(analysisResult));
-        router.push('/deletion-analysis');
-        // Toast for success will be shown on the new page or not at all to avoid confusion
-      }
+      localStorage.setItem('deletionAnalysisFullResults', JSON.stringify(analysisResult));
+      router.push('/deletion-analysis');
+      // Toast for success will be shown on the new page or to indicate process start
+      
     } catch (error) {
       console.error("Error during deletion analysis trigger:", error);
       toast({ variant: "destructive", title: "Analiz Sırasında Hata", description: `Bir hata oluştu: ${error instanceof Error ? error.message : String(error)}` });
@@ -107,7 +102,6 @@ export default function MergedDataPage() {
             data={mergedData} 
             onAnalyzeDeletions={handleTriggerDeletionAnalysis}
             isAnalyzing={isAnalyzing}
-            // analysisApplied prop removed
           />
         )}
         
@@ -140,3 +134,5 @@ export default function MergedDataPage() {
     </div>
   );
 }
+
+    
