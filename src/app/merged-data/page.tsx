@@ -9,15 +9,14 @@ import type { MergedExcelData } from '@/lib/excel-utils';
 import { Loader2, PlusCircle, Info, Home, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { extractDeletionRelatedRecords } from '@/lib/analysis-utils'; 
+// Removed: import { extractDeletionRelatedRecords } from '@/lib/analysis-utils'; 
 
 export default function MergedDataPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [mergedData, setMergedData] = useState<MergedExcelData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisApplied, setAnalysisApplied] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false); // Kept for button state
 
 
   useEffect(() => {
@@ -41,37 +40,33 @@ export default function MergedDataPage() {
   }, [toast]);
 
   const handleNewMerge = () => {
+    localStorage.removeItem('mergedExcelData');
+    localStorage.removeItem('deletionAnalysisResults'); // Clear analysis results too
     router.push('/');
   };
 
-  const handleAnalyzeDeletions = async () => {
+  const handleTriggerDeletionAnalysis = async () => {
     if (!mergedData) {
       toast({ variant: "warning", title: "Veri Yok", description: "Analiz edilecek birleştirilmiş veri bulunmuyor." });
       return;
     }
     setIsAnalyzing(true);
-    setAnalysisApplied(false); // Reset before new analysis
+    toast({ variant: "default", title: "Analiz Başlatıldı", description: "Silme kayıtları analiz ediliyor, lütfen bekleyin..." });
+    
     try {
-      // Use await here as extractDeletionRelatedRecords is now async
+      // Dynamically import to ensure it's only loaded when needed client-side
+      const { extractDeletionRelatedRecords } = await import('@/lib/analysis-utils');
       const analysisResult = await extractDeletionRelatedRecords(mergedData); 
       
-      const errorHeaderIndex = analysisResult.headers.indexOf("Analiz Hatası");
-      if (errorHeaderIndex !== -1) {
-         toast({ variant: "destructive", title: "Analiz Hatası", description: analysisResult.rows.length > 0 ? analysisResult.rows[0][errorHeaderIndex] : "Gerekli sütunlar bulunamadı veya analiz sırasında bir sorun oluştu." });
+      if (analysisResult.rows.length === 0) {
+        toast({ variant: "default", title: "Analiz Tamamlandı", description: "Analiz edilecek veya eşleştirilecek aktif silme kaydı bulunamadı." });
       } else {
-        const markerHeaderIndex = analysisResult.headers.indexOf("__isAnalyzedDeletion");
-        const silmeAnalysisPerformed = markerHeaderIndex !== -1 && analysisResult.rows.some(row => row[markerHeaderIndex] === "ANALYZED_DELETION_ROW_MARKER");
-
-        if (silmeAnalysisPerformed) {
-            toast({ variant: "default", title: "Analiz Tamamlandı", description: "Silme kayıtları analiz edildi ve tabloda işaretlendi." });
-            setAnalysisApplied(true);
-        } else {
-            toast({ variant: "default", title: "Analiz Tamamlandı", description: "İlişkilendirilecek veya işlenecek aktif silme kaydı bulunamadı." });
-        }
-        setMergedData(analysisResult); 
+        localStorage.setItem('deletionAnalysisResults', JSON.stringify(analysisResult));
+        router.push('/deletion-analysis');
+        // Toast for success will be shown on the new page or not at all to avoid confusion
       }
     } catch (error) {
-      console.error("Error during deletion analysis:", error);
+      console.error("Error during deletion analysis trigger:", error);
       toast({ variant: "destructive", title: "Analiz Sırasında Hata", description: `Bir hata oluştu: ${error instanceof Error ? error.message : String(error)}` });
     } finally {
       setIsAnalyzing(false);
@@ -110,9 +105,9 @@ export default function MergedDataPage() {
         {!isLoading && mergedData && (mergedData.headers.length > 0 || mergedData.rows.length > 0) && (
           <MergedDataTable 
             data={mergedData} 
-            onAnalyzeDeletions={handleAnalyzeDeletions}
+            onAnalyzeDeletions={handleTriggerDeletionAnalysis}
             isAnalyzing={isAnalyzing}
-            analysisApplied={analysisApplied}
+            // analysisApplied prop removed
           />
         )}
         
