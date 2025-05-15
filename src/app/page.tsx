@@ -4,23 +4,18 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ExcelMergeControls } from '@/components/ExcelMergeControls';
-// MergedDataTable is not directly used here anymore, as we navigate to a new page.
-// import { MergedDataTable } from '@/components/MergedDataTable'; 
 import type { MergedExcelData } from '@/lib/excel-utils';
-import { Loader2, PlusCircle, FileSpreadsheet, Info } from 'lucide-react';
+import { Loader2, PlusCircle, FileSpreadsheet, Info, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
-
-type ViewState = 'upload' | 'loading'; // 'table' state is removed as we navigate
+type ViewState = 'upload' | 'loading';
 
 export default function Home() {
-  // const [mergedData, setMergedData] = useState<MergedExcelData | null>(null); // Not needed if redirecting
   const [viewState, setViewState] = useState<ViewState>('upload');
   const [isMergingProcessActive, setIsMergingProcessActive] = useState(false);
-  const [selectedFilesCount, setSelectedFilesCount] = useState(0); // Keep track for empty data message
+  const [selectedFilesCount, setSelectedFilesCount] = useState(0);
 
   const router = useRouter();
   const { toast } = useToast();
@@ -28,23 +23,21 @@ export default function Home() {
   const handleMergeStart = () => {
     setIsMergingProcessActive(true);
     setViewState('loading');
-    // setMergedData(null); // Not needed
   };
 
   const handleMergeComplete = (data: MergedExcelData) => {
     setIsMergingProcessActive(false);
     if (data && data.headers.length > 0 && (data.rows.length > 0 || selectedFilesCount > 0)) {
-      localStorage.setItem('mergedExcelData', JSON.stringify(data)); // Data from processAndMergeFiles is already sorted
+      localStorage.setItem('mergedExcelData', JSON.stringify(data));
       router.push('/merged-data');
     } else {
-      if (selectedFilesCount > 0) { // Files were selected and processed, but no data resulted
+      if (selectedFilesCount > 0) {
         toast({
           variant: "warning",
           title: "Veri Bulunamadı",
           description: "Dosyalar işlendi ancak birleştirilecek uygun veri bulunamadı veya dosyalar boştu. Lütfen dosyalarınızı kontrol edin.",
         });
       } else {
-         // This case (no files selected) should be handled by ExcelMergeControls, but as a fallback:
          toast({
           variant: "destructive",
           title: "Dosya Seçilmedi",
@@ -56,7 +49,6 @@ export default function Home() {
   };
   
   const handleViewPreviousMerge = () => {
-    // Check if there's data in localStorage
     const rawData = localStorage.getItem('mergedExcelData');
     if (rawData) {
       try {
@@ -66,7 +58,6 @@ export default function Home() {
           return;
         }
       } catch (error) {
-        // Invalid data in localStorage, remove it
         localStorage.removeItem('mergedExcelData');
       }
     }
@@ -77,30 +68,29 @@ export default function Home() {
     });
   };
 
-
   return (
-    <main className="flex flex-col items-center min-h-screen p-4 sm:p-8 bg-gradient-to-br from-background to-muted/30 text-foreground">
-      <div className="absolute top-4 right-4">
-        <Button onClick={handleViewPreviousMerge} variant="outline" size="sm">
-          <FileSpreadsheet className="mr-2 h-4 w-4" />
-          Önceki Birleştirmeyi Gör
-        </Button>
-      </div>
+    <main className="flex flex-col items-center justify-center min-h-screen p-4 sm:p-8 bg-gradient-to-br from-background to-muted/30 text-foreground">
       {viewState === 'upload' && (
-        <div className="flex flex-col items-center justify-center flex-grow w-full">
-          <Card className="w-full max-w-2xl shadow-2xl rounded-xl overflow-hidden">
-            <CardHeader className="bg-primary/5 p-8">
-              <div className="flex items-center justify-center mb-4">
-                <FileSpreadsheet className="h-16 w-16 text-primary" />
+        <div className="w-full max-w-3xl">
+          <div className="flex justify-end mb-4">
+            <Button onClick={handleViewPreviousMerge} variant="outline" size="sm" className="shadow-sm hover:shadow-md transition-shadow">
+              <History className="mr-2 h-4 w-4" />
+              Önceki Birleştirmeyi Gör
+            </Button>
+          </div>
+          <Card className="w-full shadow-xl rounded-xl overflow-hidden border border-border/50">
+            <CardHeader className="bg-card/80 p-8 border-b border-border/50">
+              <div className="flex flex-col items-center text-center">
+                <FileSpreadsheet className="h-20 w-20 text-primary mb-4" />
+                <CardTitle className="text-3xl sm:text-4xl font-bold text-primary tracking-tight">
+                  SSK KONTROL SAYFASI
+                </CardTitle>
+                <CardDescription className="text-md sm:text-lg text-muted-foreground mt-3 max-w-lg mx-auto">
+                  Excel dosyalarınızı kolayca yükleyin, birleştirin ve TC Kimlik No'suna göre sıralanmış olarak görüntüleyin.
+                </CardDescription>
               </div>
-              <CardTitle className="text-4xl font-bold text-primary tracking-tight text-center">
-                SSK KONTROL SAYFASI
-              </CardTitle>
-              <CardDescription className="text-lg text-muted-foreground mt-3 text-center max-w-md mx-auto">
-                Excel dosyalarınızı kolayca yükleyin, birleştirin ve TC Kimlik No'suna göre sıralanmış olarak görüntüleyin.
-              </CardDescription>
             </CardHeader>
-            <CardContent className="p-6 sm:p-8">
+            <CardContent className="p-6 sm:p-10 bg-background/50">
               <ExcelMergeControls 
                 onMergeStart={handleMergeStart}
                 onMergeComplete={handleMergeComplete} 
@@ -108,7 +98,7 @@ export default function Home() {
                 onFilesSelected={(count) => setSelectedFilesCount(count)}
               />
             </CardContent>
-             <CardFooter className="p-6 bg-primary/5 text-center block">
+             <CardFooter className="p-6 bg-card/80 border-t border-border/50 text-center block">
                 <p className="text-xs text-muted-foreground">
                     © {new Date().getFullYear()} Excel Birleştirme Aracı. Tüm hakları saklıdır.
                 </p>
@@ -118,14 +108,12 @@ export default function Home() {
       )}
       
       {viewState === 'loading' && (
-         <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-4">
-            <Loader2 className="h-20 w-20 animate-spin mb-6 text-primary" />
-            <p className="text-2xl font-semibold">Dosyalar birleştiriliyor...</p>
-            <p className="text-muted-foreground mt-2">Lütfen bekleyin, bu işlem dosya boyutuna göre biraz zaman alabilir.</p>
+         <div className="flex-grow flex flex-col items-center justify-center text-lg text-primary p-4 text-center">
+            <Loader2 className="h-24 w-24 animate-spin mb-8 text-primary" />
+            <p className="text-3xl font-semibold">Dosyalar birleştiriliyor...</p>
+            <p className="text-muted-foreground mt-3 text-lg">Lütfen bekleyin, bu işlem dosya boyutuna göre biraz zaman alabilir.</p>
         </div>
       )}
-
-      {/* Table view is now handled by /merged-data page */}
     </main>
   );
 }

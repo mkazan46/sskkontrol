@@ -10,35 +10,37 @@ import {
   TableBody,
   TableCell,
 } from "@/components/ui/table";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Table2, Info, FileSearch2, Loader2 } from 'lucide-react';
+import { Table2, Info, FileSearch2, Loader2, AlertTriangle } from 'lucide-react';
 import type { MergedExcelData } from '@/lib/excel-utils';
 import { format, isValid } from 'date-fns';
 import { tr } from 'date-fns/locale'; 
 import { parseTurkishDate, DATE_HEADERS_TR_FORMATTING, TIME_HEADERS_TR_FORMATTING } from '@/lib/date-utils';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { ANALYSIS_HIGHLIGHT_MARKER_HEADER } from '@/lib/analysis-utils';
+
 
 interface MergedDataTableProps {
   data: MergedExcelData | null;
   onAnalyzeDeletions?: () => void; 
   isAnalyzing?: boolean;
-  highlightMarkerHeader?: string; // Optional prop to specify the header for highlighting
+  highlightMarkerHeader?: string;
 }
 
 export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlightMarkerHeader }: MergedDataTableProps) {
   if (!data) {
     return (
-        <Card className="w-full mt-6 shadow-xl">
-            <CardHeader>
-                <CardTitle className="flex items-center text-2xl">
-                    <Info className="mr-3 h-7 w-7 text-primary" />
+        <Card className="w-full mt-6 shadow-xl rounded-lg border border-border/50">
+            <CardHeader className="p-6 border-b border-border/50">
+                <CardTitle className="flex items-center text-2xl font-semibold text-foreground">
+                    <AlertTriangle className="mr-3 h-7 w-7 text-destructive" />
                     Veri Yok
                 </CardTitle>
             </CardHeader>
-            <CardContent>
-                <p className="text-muted-foreground text-center py-6">
+            <CardContent className="p-8">
+                <p className="text-muted-foreground text-center text-lg py-6">
                 Görüntülenecek birleştirilmiş veri bulunmamaktadır.
                 </p>
             </CardContent>
@@ -50,7 +52,6 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlig
   
   const markerColIndex = highlightMarkerHeader ? data.headers.indexOf(highlightMarkerHeader) : -1;
 
-  // Filter out the marker header from displayHeaders
   const visibleHeaders = data.headers.filter(header => header !== highlightMarkerHeader);
   const displayHeaders = hasSiraNo ? [...visibleHeaders] : ["Sıra No", ...visibleHeaders];
 
@@ -78,9 +79,15 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlig
       if (isDateColumn && !isTimeColumn) { 
         return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
       }
-      if (parsedDate.getHours() === 0 && parsedDate.getMinutes() === 0 && parsedDate.getSeconds() === 0 && parsedDate.getMilliseconds() === 0) {
-        if (isDateColumn) return format(parsedDate, 'dd.MM.yyyy', { locale: tr }); 
+      // If it's both a date and time column, or if it's a date column with time components (not 00:00:00)
+      if ((isDateColumn && isTimeColumn) || (isDateColumn && (parsedDate.getHours() !== 0 || parsedDate.getMinutes() !== 0 || parsedDate.getSeconds() !== 0))) {
+        return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
       }
+      // If it's a date column and time is 00:00:00, just show date
+      if (isDateColumn) {
+        return format(parsedDate, 'dd.MM.yyyy', { locale: tr });
+      }
+      // Fallback for other valid dates that might not fit specific D/T column types
       return format(parsedDate, 'dd.MM.yyyy HH:mm:ss', { locale: tr });
     }
     
@@ -94,18 +101,18 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlig
   };
 
   return (
-    <Card className="w-full mt-6 shadow-xl rounded-lg overflow-hidden flex flex-col flex-grow">
-      <CardHeader className="border-b flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-2">
+    <Card className="w-full mt-0 shadow-2xl rounded-xl overflow-hidden border border-border/50 flex flex-col flex-grow">
+      <CardHeader className="border-b border-border/50 flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 gap-3 bg-card/50">
         <div>
-          <CardTitle className="flex items-center text-xl sm:text-2xl text-primary">
+          <CardTitle className="flex items-center text-xl sm:text-2xl font-bold text-primary">
             <Table2 className="mr-2 sm:mr-3 h-6 w-6 sm:h-7 sm:w-7" />
             {onAnalyzeDeletions ? "Birleştirilmiş Veri Listesi" : "Analiz Sonuçları"}
           </CardTitle>
-          <CardDescription className="text-xs sm:text-sm mt-1">
+          <CardDescription className="text-xs sm:text-sm mt-1.5 text-muted-foreground max-w-prose">
             {onAnalyzeDeletions 
               ? "Yüklediğiniz dosyalardan birleştirilmiş ve ilgili sütun bulunduğunda TC Kimlik No'suna göre sıralanmış veriler."
               : highlightMarkerHeader 
-                ? "Tüm kayıtlar listelenmiştir. Analiz edilen ve birleştirilen silme kayıtları kırmızı ile vurgulanmıştır."
+                ? "Tüm kayıtlar listelenmiştir. Analiz edilen ve birleştirilen silme kayıtları aşağıda kırmızı ile vurgulanmıştır."
                 : "İşlenmiş veri listesi."
             }
           </CardDescription>
@@ -114,48 +121,47 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlig
             <Button 
               onClick={onAnalyzeDeletions} 
               variant="outline" 
-              className="text-primary border-primary hover:bg-primary/10 whitespace-nowrap px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm self-start sm:self-center"
+              className="text-primary border-primary hover:bg-primary/10 whitespace-nowrap px-4 py-2 text-sm sm:text-md self-start sm:self-center font-semibold shadow-sm hover:shadow-md transition-shadow"
               disabled={isAnalyzing || !data || data.rows.length === 0}
-              size="sm"
+              size="default"
             >
-              {isAnalyzing ? <Loader2 className="mr-1 sm:mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <FileSearch2 className="mr-1 sm:mr-2 h-4 w-4 sm:h-5 sm:w-5" />}
+              {isAnalyzing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FileSearch2 className="mr-2 h-5 w-5" />}
               Silme Kayıtlarını Çıkart & Analiz Et
             </Button>
         )}
       </CardHeader>
-      <CardContent className="p-0 flex flex-col flex-grow"> 
+      <CardContent className="p-0 flex flex-col flex-grow overflow-hidden"> 
         {data.rows.length === 0 ? ( 
-          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground flex-grow">
-            <Info className="h-12 w-12 mb-4 text-primary/70" />
-            <p className="text-lg">Görüntülenecek veri bulunmamaktadır.</p>
-             {onAnalyzeDeletions && <p className="text-sm">Lütfen dosya yükleyerek yeni bir birleştirme yapın veya dosyalarınızı kontrol edin.</p>}
+          <div className="flex flex-col items-center justify-center h-80 text-muted-foreground flex-grow text-center p-6">
+            <Info className="h-16 w-16 mb-6 text-primary/70" />
+            <p className="text-xl font-semibold">Görüntülenecek veri bulunmamaktadır.</p>
+             {onAnalyzeDeletions && <p className="text-md mt-2">Lütfen dosya yükleyerek yeni bir birleştirme yapın veya dosyalarınızı kontrol edin.</p>}
           </div>
         ) : (
-          <ScrollArea className="flex-grow w-full"> 
+          <ScrollArea className="flex-grow w-full relative"> {/* Added relative for potential absolute positioned elements inside */}
             <Table className="min-w-full table-auto">
-              <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
+              <TableHeader className="sticky top-0 bg-card z-10 shadow-sm border-b border-border">
                 <TableRow className="border-b-0">
                   {displayHeaders.map((header, index) => (
                     <TableHead 
                       key={index} 
-                      className="font-semibold text-card-foreground px-3 py-3 text-left sticky top-0 bg-card z-10 whitespace-nowrap" 
+                      className="font-bold text-card-foreground/90 px-4 py-3.5 text-left text-sm whitespace-nowrap bg-muted/40" 
                     >
                       {String(header)}
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="divide-y divide-border/70">
                 {data.rows.map((originalRow, rowIndex) => {
                   const isHighlighted = markerColIndex !== -1 && originalRow[markerColIndex] === true;
                   
-                  // Prepare row for display by filtering out marker column data
                   let rowCellsForDisplay = [...originalRow];
                   if (markerColIndex !== -1) {
                     rowCellsForDisplay.splice(markerColIndex, 1);
                   }
                   if (hasSiraNo) {
-                    // rowCellsForDisplay already has Sıra No if it was in original data
+                    // Sıra No already in rowCellsForDisplay
                   } else {
                     rowCellsForDisplay = [rowIndex + 1, ...rowCellsForDisplay];
                   }
@@ -164,8 +170,9 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlig
                     <TableRow 
                       key={rowIndex} 
                       className={cn(
-                        "hover:bg-muted/30 even:bg-background/30 border-b last:border-b-0",
-                        isHighlighted && "bg-red-100 dark:bg-red-900/40 hover:bg-red-200/80 dark:hover:bg-red-800/60"
+                        "hover:bg-muted/50 transition-colors duration-150",
+                        rowIndex % 2 === 0 ? "bg-background/20" : "bg-card/30",
+                        isHighlighted && "bg-red-100 dark:bg-red-900/50 hover:bg-red-200/80 dark:hover:bg-red-800/70"
                       )}
                     >
                       {rowCellsForDisplay.map((cellData, cellIndex) => {
@@ -174,8 +181,8 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlig
                           <TableCell 
                             key={cellIndex} 
                             className={cn(
-                              "text-foreground px-3 py-2 text-left text-sm break-words",
-                              isHighlighted && "text-red-900 dark:text-red-100"
+                              "px-4 py-2.5 text-left text-sm break-words",
+                              isHighlighted ? "text-red-900 dark:text-red-50 font-medium" : "text-foreground/90"
                             )}
                             title={formatCellContent(cellData, String(headerText))} 
                           >
@@ -192,13 +199,11 @@ export function MergedDataTable({ data, onAnalyzeDeletions, isAnalyzing, highlig
           </ScrollArea>
         )}
         {data.rows.length > 0 && (
-            <div className="p-3 text-xs text-muted-foreground text-right border-t">
+            <CardFooter className="p-4 text-xs text-muted-foreground text-right border-t border-border/50 bg-card/50">
                 Toplam {data.rows.length} satır gösteriliyor.
-            </div>
+            </CardFooter>
         )}
       </CardContent>
     </Card>
   );
 }
-
-    
