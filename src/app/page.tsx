@@ -72,12 +72,7 @@ export default function Home() {
     <main className="flex flex-col items-center justify-center min-h-screen p-4 sm:p-8 bg-gradient-to-br from-background to-muted/30 text-foreground">
       {viewState === 'upload' && (
         <div className="w-full max-w-3xl">
-          <div className="flex justify-end mb-4">
-            <Button onClick={handleViewPreviousMerge} variant="outline" size="sm" className="shadow-sm hover:shadow-md transition-shadow">
-              <History className="mr-2 h-4 w-4" />
-              Önceki Birleştirmeyi Gör
-            </Button>
-          </div>
+          
           <Card className="w-full shadow-xl rounded-xl overflow-hidden border border-border/50">
             <CardHeader className="bg-card/80 p-8 border-b border-border/50">
               <div className="flex flex-col items-center text-center">

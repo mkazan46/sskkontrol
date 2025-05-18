@@ -8,7 +8,6 @@ import { tr } from 'date-fns/locale';
 
 // Constants for column header matching (all lowercase for case-insensitive comparison)
 const TC_KIMLIK_NO_HEADERS_ANALYSIS = ["tc kimlik no", "tckn", "kimlik no", "tc no", "tc", "vatandaşlık no", "t.c. kimlik no", "t.c kimlik no", "t.c. no", "tc kimlik numarası"];
-const AD_SOYAD_HEADERS_ANALYSIS = ["adı soyadı", "ad soyad", "isim soyisim", "personel adı", "personel", "çalışan"];
 const TARIH_HEADERS_ANALYSIS = ["tarih", "işlem tarihi", "kayıt tarihi", "gün"]; 
 const ISLEM_HEADERS_ANALYSIS = ["işlem", "açıklama", "işlem türü", "olay", "hareket tipi"];
 const SAAT_HEADERS_ANALYSIS = ["saat", "işlem saati", "zaman", "giriş saati", "çıkış saati"]; 
@@ -35,8 +34,6 @@ function findColumnIndex(headers: string[], targetHeaders: string[], headerOrigi
   return -1; 
 }
 
-// Function to get a comparable date-time string for sorting and comparison.
-// This function is defined locally as it's only used by extractDeletionRelatedRecords.
 function getFormattedEventDateTime(row: any[], groupingDateColIdx: number, eventSaatColIdx: number, islemColIdx: number, headers: string[]): string {
     const groupingDateValue = groupingDateColIdx !== -1 ? row[groupingDateColIdx] : null;
     const parsedGroupingDate = parseTurkishDate(groupingDateValue);
@@ -118,8 +115,8 @@ export async function extractDeletionRelatedRecords(mergedData: MergedExcelData)
         entryRecordsByTcDate.get(mapKey)!.push({ row, originalIndex: i, eventTime });
       }
     }
-    if (i > 0 && i % 100 === 0) { // Reduced chunk size to 100
-      await new Promise(resolve => setTimeout(resolve, 0)); // Yield to main thread
+    if (i > 0 && i % 50 === 0) { // Daha sık mola
+      await new Promise(resolve => setTimeout(resolve, 0)); 
     }
   }
   
@@ -128,7 +125,7 @@ export async function extractDeletionRelatedRecords(mergedData: MergedExcelData)
   for (let i = 0; i < groupKeys.length; i++) {
     const key = groupKeys[i];
     entryRecordsByTcDate.get(key)!.sort((a, b) => (a.eventTime || "").localeCompare(b.eventTime || ""));
-    if (i > 0 && i % 50 === 0) { // Yield after sorting a batch of groups
+    if (i > 0 && i % 25 === 0) { // Daha sık mola
         await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
@@ -160,9 +157,9 @@ export async function extractDeletionRelatedRecords(mergedData: MergedExcelData)
           currentRow[islemColIdx] = `${entryIslemOriginalCase} / ${currentIslemOriginalCase}`;
           
           const entryTime = formatDateToHHMMSS(parseTurkishDate(getFormattedEventDateTime(entryRow, tarihColIdx, saatColIdx, islemColIdx, originalHeaders)));
-          if (saatColIdx !== -1) {
+          if (saatColIdx !== -1 && entryTime) { // Check if entryTime is not empty
             currentRow[saatColIdx] = entryTime;
-          } else {
+          } else if (saatColIdx === -1) {
              console.warn("Saat sütunu bulunamadı, giriş saati Silme kaydının Saat sütununa yazılamadı.");
           }
         } else {
@@ -170,8 +167,8 @@ export async function extractDeletionRelatedRecords(mergedData: MergedExcelData)
         }
       }
     }
-    if (i > 0 && i % 100 === 0) { // Reduced chunk size to 100
-      await new Promise(resolve => setTimeout(resolve, 0)); // Yield to main thread
+    if (i > 0 && i % 50 === 0) { // Daha sık mola
+      await new Promise(resolve => setTimeout(resolve, 0)); 
     }
   }
   
